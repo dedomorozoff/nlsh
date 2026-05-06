@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/nlsh/nlsh/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -17,9 +19,20 @@ func NewRootCmd() *cobra.Command {
 	rf := &rootFlags{cfg: cfg}
 
 	cmd := &cobra.Command{
-		Use:           "nlsh",
+		Use:           "nlsh [query]",
 		Short:         "Natural Language Shell — общайся с системой по-человечески",
 		Long:          "nlsh — это локальный LLM-ассистент для shell. Локальная модель через llama.cpp, без облака и без HTTP-сервера.",
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return runInteractive(cmd, rf)
+			}
+			input := strings.TrimSpace(strings.Join(args, " "))
+			if input == "" {
+				return runInteractive(cmd, rf)
+			}
+			return runOneShot(cmd, rf, input)
+		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
