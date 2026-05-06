@@ -1,0 +1,32 @@
+# Binaries
+/bin/
+/dist/
+nlsh
+nlsh.exe
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# Go
+vendor/
+
+# llama.cpp build dirs
+third_party/llama.cpp/build/
+third_party/llama.cpp/build-*/
+
+# Models
+models/
+*.gguf
+
+# Local config & logs
+.nlsh/
+*.log
+
+# Editors
+.vscode/
+.idea/
+*.swp
