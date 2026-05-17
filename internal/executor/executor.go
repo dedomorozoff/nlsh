@@ -22,6 +22,9 @@ func Run(ctx context.Context, shell, command string) Result {
 	if strings.TrimSpace(command) == "" {
 		return Result{ExitCode: -1, Err: errEmpty}
 	}
+	if runtime.GOOS == "windows" && strings.Contains(strings.ToLower(shell), "powershell") {
+		command = translateToPowerShell(command)
+	}
 	args := shellArgs(shell)
 	cmd := exec.CommandContext(ctx, args[0], append(args[1:], command)...)
 
@@ -68,3 +71,25 @@ type errEmptyCommand struct{}
 func (errEmptyCommand) Error() string { return "empty command" }
 
 var errEmpty = errEmptyCommand{}
+
+func translateToPowerShell(cmd string) string {
+	replacer := strings.NewReplacer(
+		"rm -rf", "Remove-Item -Recurse -Force",
+		"rm -r", "Remove-Item -Recurse -Force",
+		"rm -f", "Remove-Item -Force",
+		"rm ", "Remove-Item ",
+		"mkdir ", "New-Item -ItemType Directory ",
+		"touch ", "New-Item -ItemType File ",
+		"cat ", "Get-Content ",
+		"ls ", "Get-ChildItem ",
+		"ls", "Get-ChildItem",
+		"cp ", "Copy-Item ",
+		"mv ", "Move-Item ",
+		"pwd", "Get-Location",
+		"echo ", "Write-Output ",
+		"ping -c ", "Test-Connection -Count ",
+		"curl ", "Invoke-WebRequest ",
+		"wget ", "Invoke-WebRequest ",
+	)
+	return replacer.Replace(cmd)
+}
