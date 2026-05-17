@@ -37,7 +37,7 @@ func Default() Config {
 		TopP:        0.9,
 		Shell:       defaultShell(),
 		HistoryFile: defaultHistoryFile(),
-		DryRun:      true,
+		DryRun:      false,
 	}
 }
 
