@@ -111,11 +111,7 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 }
 
 func buildPrompt(username, hostname, cwd string, isTTY bool) string {
-	if runtime.GOOS == "windows" && strings.Contains(username, `\`) {
-		parts := strings.Split(username, `\`)
-		username = parts[len(parts)-1]
-	}
-
+	_ = username // suppress unused warning
 	short := shortPath(cwd)
 	return fmt.Sprintf("%s[%s]%s> ", gray, short, reset)
 }
@@ -165,7 +161,9 @@ func handleSlash(line string, out io.Writer) (stop bool) {
 		}
 	case line == "/cd":
 		if home, err := os.UserHomeDir(); err == nil {
-			os.Chdir(home)
+			if err := os.Chdir(home); err != nil {
+				fmt.Fprintf(out, "%s%s%s\n", red, err, reset)
+			}
 		}
 	case line == "/clear", line == "clear":
 		clearScreen(out)
