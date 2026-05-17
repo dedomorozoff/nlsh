@@ -27,6 +27,7 @@ func Run(ctx context.Context, shell, command string) Result {
 	}
 	args := shellArgs(shell)
 	cmd := exec.CommandContext(ctx, args[0], append(args[1:], command)...)
+	cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = io.MultiWriter(&stdout)
