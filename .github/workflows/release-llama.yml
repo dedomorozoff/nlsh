@@ -1,0 +1,119 @@
+name: Build with llama.cpp
+
+on:
+  push:
+    tags:
+      - 'llama-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-llama:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            ext: ""
+            cc: gcc
+            cxx: g++
+          - os: ubuntu-24.04
+            goos: linux
+            goarch: arm64
+            ext: ""
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+            cc: clang
+            cxx: clang++
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: .exe
+            cc: gcc
+            cxx: g++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies (Linux)
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ${{ matrix.cc }} ${{ matrix.cxx }}
+
+      - name: Install dependencies (macOS)
+        if: matrix.goos == 'darwin'
+        run: brew install cmake
+
+      - name: Init submodule
+        run: git submodule update --init --recursive
+
+      - name: Build llama.cpp
+        run: |
+          mkdir -p third_party/llama.cpp/build
+          cmake -G "Unix Makefiles" -S third_party/llama.cpp -B third_party/llama.cpp/build \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          cmake --build third_party/llama.cpp/build --config Release -j$(nproc)
+
+      - name: Build nlsh with llama
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          mkdir -p bin
+          CGO_ENABLED=1 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -tags llama -ldflags="-s -w" -o "bin/nlsh${{ matrix.ext }}" ./cmd/nlsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlsh-llama-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext != '' && '-' || '' }}${{ matrix.goarch }}${{ matrix.ext }}
+          path: bin/nlsh${{ matrix.ext }}
+
+  release:
+    needs: build-llama
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          for f in release/nlsh-llama-*/*; do
+            name=$(basename "$f")
+            cp "$f" "dist/$name"
+          done
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,96 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            ext: ""
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            ext: ""
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Build stub (no llama)
+        run: |
+          mkdir -p bin
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags="-s -w" -o "bin/nlsh${{ matrix.ext }}" ./cmd/nlsh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlsh-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext != '' && '-' || '' }}${{ matrix.goarch }}${{ matrix.ext }}
+          path: bin/nlsh${{ matrix.ext }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Create archive for each platform
+        run: |
+          mkdir -p dist
+          for dir in release/nlsh-*; do
+            if [ -d "$dir" ]; then
+              name=$(basename "$dir")
+              if [[ "$name" == *"windows"* ]]; then
+                cp "$dir/nlsh.exe" "dist/$name.exe"
+              else
+                tar -czf "dist/$name.tar.gz" -C "$dir" .
+              fi
+            fi
+          done
+          ls -la dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
