@@ -17,7 +17,10 @@ func runInteractive(cmd *cobra.Command, rf *rootFlags) error {
 
 	out := cmd.OutOrStdout()
 	in := cmd.InOrStdin()
-	fmt.Fprintln(out, "nlsh interactive mode — введи запрос. /help, /exit")
+
+	banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell\n%sНапиши запрос или /help для справки%s\n\n",
+		bold, cyan, reset, gray, reset)
+	fmt.Fprint(out, banner)
 
 	ctx := cmd.Context()
 	if ctx == nil {

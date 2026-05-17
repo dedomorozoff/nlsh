@@ -6,11 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/user"
+	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nlsh/nlsh/internal/executor"
 	"github.com/nlsh/nlsh/internal/prompt"
 	"github.com/spf13/cobra"
+)
+
+var (
+	reset  = "\033[0m"
+	bold   = "\033[1m"
+	cyan   = "\033[36m"
+	green  = "\033[32m"
+	yellow = "\033[33m"
+	red    = "\033[31m"
+	gray   = "\033[90m"
 )
 
 func newReplCmd(rf *rootFlags) *cobra.Command {
@@ -26,7 +40,10 @@ func newReplCmd(rf *rootFlags) *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			in := cmd.InOrStdin()
-			fmt.Fprintln(out, "nlsh repl — введи запрос на естественном языке. /help, /exit")
+
+			banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell (%srepl%s mode)\n%sНапиши запрос или /help для справки%s\n\n",
+				bold, cyan, reset, green, reset, gray, reset)
+			fmt.Fprint(out, banner)
 
 			ctx := cmd.Context()
 			if ctx == nil {
@@ -38,50 +55,185 @@ func newReplCmd(rf *rootFlags) *cobra.Command {
 }
 
 func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out, errW io.Writer) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	usr, _ := user.Current()
+	hostname, _ := os.Hostname()
+
+	isTTY := isTerminal(in)
+
 	for {
-		fmt.Fprint(out, "\n> ")
-		if !scanner.Scan() {
-			return scanner.Err()
+		cwd, _ := os.Getwd()
+		promptStr := buildPrompt(usr.Username, hostname, cwd, isTTY)
+
+		fmt.Fprint(out, promptStr)
+
+		line, err := readLine(in, out)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				fmt.Fprintln(out, "\nexit")
+				return nil
+			}
+			return err
 		}
-		line := strings.TrimSpace(scanner.Text())
+
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
+
 		if strings.HasPrefix(line, "/") {
 			if stop := handleSlash(line, out); stop {
 				return nil
 			}
 			continue
 		}
+
 		if err := handleTurn(ctx, s, rf, line, in, out, errW); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}
-			fmt.Fprintln(errW, "ошибка:", err)
+			fmt.Fprintf(errW, "%s%s%s\n", red, err, reset)
 		}
 	}
 }
 
-func handleSlash(line string, out io.Writer) (stop bool) {
-	switch {
-	case line == "/exit", line == "/quit":
-		return true
-	case line == "/help":
-		fmt.Fprintln(out, "/help        — эта справка")
-		fmt.Fprintln(out, "/exit        — выход")
-		fmt.Fprintln(out, "просто пиши  — модель предложит команду, можно подтвердить выполнение")
-		fmt.Fprintln(out, "!<command>   — выполнить команду напрямую, без LLM")
-		fmt.Fprintln(out, "builtin      — cd, pwd, clear, history, exit")
-	default:
-		fmt.Fprintln(out, "неизвестная команда:", line)
+func buildPrompt(username, hostname, cwd string, isTTY bool) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("%s[%s@%s %s]$ %s", gray, username, hostname, shortPath(cwd), reset)
+	}
+	return fmt.Sprintf("%s%s@%s%s %s%s$ %s",
+		green, username, hostname,
+		cyan, shortPath(cwd),
+		reset, bold)
+}
+
+func shortPath(p string) string {
+	home, _ := os.UserHomeDir()
+	if home != "" && strings.HasPrefix(p, home) {
+		return "~" + strings.TrimPrefix(p, home)
+	}
+
+	if runtime.GOOS == "windows" {
+		if len(p) > 3 {
+			return p
+		}
+		return p
+	}
+
+	if len(p) > 40 {
+		return "..." + p[len(p)-37:]
+	}
+	return p
+}
+
+func isTerminal(r io.Reader) bool {
+	if f, ok := r.(*os.File); ok {
+		info, err := f.Stat()
+		if err != nil {
+			return false
+		}
+		return (info.Mode() & os.ModeCharDevice) != 0
 	}
 	return false
 }
 
+func readLine(in io.Reader, out io.Writer) (string, error) {
+	if isTerminal(in) {
+		return readLineRaw(in)
+	}
+
+	var (
+		line   []rune
+		maxLen = 64 * 1024
+		buf    = make([]byte, 4)
+	)
+
+	for {
+		n, err := in.Read(buf)
+		if n > 0 {
+			r, _ := utf8.DecodeRune(buf[:n])
+			if r == '\n' || r == '\r' {
+				fmt.Fprintln(out)
+				return string(line), nil
+			}
+			if r == 127 || r == 8 {
+				if len(line) > 0 {
+					line = line[:len(line)-1]
+					fmt.Fprint(out, "\b \b")
+				}
+				continue
+			}
+			if r >= 32 {
+				line = append(line, r)
+				fmt.Fprint(out, string(r))
+			}
+		}
+		if err != nil {
+			if len(line) > 0 {
+				return string(line), nil
+			}
+			return "", err
+		}
+		if len(line) >= maxLen {
+			return string(line), nil
+		}
+	}
+}
+
+func readLineRaw(in io.Reader) (string, error) {
+	reader := bufio.NewReader(in)
+	line, _, err := reader.ReadLine()
+	return string(line), err
+}
+
+func handleSlash(line string, out io.Writer) (stop bool) {
+	switch {
+	case line == "/exit", line == "/quit", line == "exit", line == "quit":
+		fmt.Fprintln(out, "до встречи!")
+		return true
+	case line == "/help", line == "help":
+		showHelp(out)
+	case strings.HasPrefix(line, "/cd "):
+		target := strings.TrimPrefix(line, "/cd ")
+		target = strings.TrimSpace(target)
+		if err := os.Chdir(target); err != nil {
+			fmt.Fprintf(out, "%s%s%s\n", red, err, reset)
+		}
+	case line == "/cd":
+		if home, err := os.UserHomeDir(); err == nil {
+			os.Chdir(home)
+		}
+	case line == "/clear", line == "clear":
+		clearScreen(out)
+	case line == "/pwd", line == "pwd":
+		wd, _ := os.Getwd()
+		fmt.Fprintln(out, wd)
+	case line == "/history", line == "history":
+		fmt.Fprintln(out, "история...")
+	default:
+		if strings.HasPrefix(line, "!") {
+			cmd := strings.TrimSpace(strings.TrimPrefix(line, "!"))
+			fmt.Fprintf(out, "%s$ %s%s\n", cyan, reset, cmd)
+			return false
+		}
+		fmt.Fprintf(out, "%sнеизвестная команда: %s%s\n", red, line, reset)
+	}
+	return false
+}
+
+func showHelp(out io.Writer) {
+	fmt.Fprintf(out, "%s%s=== nlsh справка ===%s\n\n", bold, cyan, reset)
+	fmt.Fprintf(out, "%sОписание:%s\n  nlsh — оболочка с естественным языком. Пишешь \"покажи файлы\",\n  а он выполняет \"ls -la\".\n\n", bold, reset)
+	fmt.Fprintf(out, "%sКоманды:%s\n  просто текст    — отправить запрос LLM\n  %s!команда%s     — выполнить команду напрямую\n  %s/cd%s путь     — сменить директорию\n  %s/clear%s       — очистить экран\n  %s/pwd%s         — показать текущую директорию\n  %s/history%s     — показать историю\n  %s/exit%s        — выйти\n\n", bold, reset,
+		yellow, reset, yellow, reset, yellow, reset, yellow, reset, yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "%sПримеры:%s\n  покажи все txt файлы\n  найди ошибки в логах\n  запусти docker\n\n", bold, reset)
+	fmt.Fprintf(out, "%s Режим по умолчанию: %sdry-run%s (команды не выполняются).\n  Используй --dry-run=false чтобы включить.\n\n", bold, green, reset)
+}
+
+func clearScreen(out io.Writer) {
+	fmt.Fprint(out, "\033[H\033[2J\033[3J")
+}
+
 func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in io.Reader, out, errW io.Writer) error {
-	// Прямой режим shell passthrough: !<command> уходит в локальный shell без LLM.
 	if strings.HasPrefix(strings.TrimSpace(input), "!") {
 		raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), "!"))
 		if handled, shouldExit, err := runBuiltin(raw, out, errW, s.recent); handled {
