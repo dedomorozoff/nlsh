@@ -10,7 +10,6 @@ import (
 	"os/user"
 	"runtime"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nlsh/nlsh/internal/executor"
 	"github.com/nlsh/nlsh/internal/prompt"
@@ -60,21 +59,24 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 
 	isTTY := isTerminal(in)
 
+	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
 	for {
 		cwd, _ := os.Getwd()
 		promptStr := buildPrompt(usr.Username, hostname, cwd, isTTY)
 
 		fmt.Fprint(out, promptStr)
 
-		line, err := readLine(in, out)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				fmt.Fprintln(out, "\nexit")
-				return nil
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return err
 			}
-			return err
+			fmt.Fprintln(out, "\nexit")
+			return nil
 		}
 
+		line := scanner.Text()
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -137,52 +139,12 @@ func isTerminal(r io.Reader) bool {
 }
 
 func readLine(in io.Reader, out io.Writer) (string, error) {
-	if isTerminal(in) {
-		return readLineRaw(in)
-	}
-
-	var (
-		line   []rune
-		maxLen = 64 * 1024
-		buf    = make([]byte, 4)
-	)
-
-	for {
-		n, err := in.Read(buf)
-		if n > 0 {
-			r, _ := utf8.DecodeRune(buf[:n])
-			if r == '\n' || r == '\r' {
-				fmt.Fprintln(out)
-				return string(line), nil
-			}
-			if r == 127 || r == 8 {
-				if len(line) > 0 {
-					line = line[:len(line)-1]
-					fmt.Fprint(out, "\b \b")
-				}
-				continue
-			}
-			if r >= 32 {
-				line = append(line, r)
-				fmt.Fprint(out, string(r))
-			}
-		}
-		if err != nil {
-			if len(line) > 0 {
-				return string(line), nil
-			}
-			return "", err
-		}
-		if len(line) >= maxLen {
-			return string(line), nil
-		}
-	}
-}
-
-func readLineRaw(in io.Reader) (string, error) {
 	reader := bufio.NewReader(in)
-	line, _, err := reader.ReadLine()
-	return string(line), err
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return strings.TrimRight(line, "\r\n"), nil
 }
 
 func handleSlash(line string, out io.Writer) (stop bool) {
