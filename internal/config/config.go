@@ -13,6 +13,7 @@ import (
 // чтобы их легко было пробрасывать из флагов CLI и из JSON-файла.
 type Config struct {
 	ModelPath   string  `json:"model_path"`
+	DefaultModel string `json:"default_model"`
 	Threads     int     `json:"threads"`
 	CtxSize     int     `json:"ctx_size"`
 	GPULayers   int     `json:"gpu_layers"`
@@ -62,6 +63,29 @@ func Load() (Config, error) {
 		return cfg, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// Save сохраняет конфигурацию в ~/.config/nlsh/config.json
+func Save(cfg Config) error {
+	path, err := userConfigPath()
+	if err != nil {
+		return fmt.Errorf("config path: %w", err)
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create dir %s: %w", dir, err)
+	}
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
 }
 
 func userConfigPath() (string, error) {

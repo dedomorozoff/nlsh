@@ -4,10 +4,11 @@ package llm
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../third_party/llama.cpp/include -I${SRCDIR}/../../third_party/llama.cpp/ggml/include -O3
-#cgo LDFLAGS: -L${SRCDIR}/../../third_party/llama.cpp/build/src
-#cgo LDFLAGS: -L${SRCDIR}/../../third_party/llama.cpp/build/ggml/src
-#cgo LDFLAGS: -L${SRCDIR}/../../third_party/llama.cpp/build/ggml/src/ggml-cpu
-#cgo LDFLAGS: -lllama -lggml -lggml-base -lggml-cpu
+#cgo LDFLAGS: ${SRCDIR}/../../third_party/llama.cpp/build/src/libllama.a
+#cgo LDFLAGS: ${SRCDIR}/../../third_party/llama.cpp/build/ggml/src/ggml.a
+#cgo LDFLAGS: ${SRCDIR}/../../third_party/llama.cpp/build/ggml/src/ggml-base.a
+#cgo LDFLAGS: ${SRCDIR}/../../third_party/llama.cpp/build/ggml/src/ggml-cpu.a
+#cgo windows LDFLAGS: -lstdc++ -lgomp
 #cgo linux LDFLAGS: -lm -lstdc++ -lpthread -ldl
 #cgo darwin LDFLAGS: -lm -lc++ -framework Accelerate
 

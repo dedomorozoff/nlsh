@@ -9,6 +9,7 @@ import (
 
 	"github.com/nlsh/nlsh/internal/config"
 	"github.com/nlsh/nlsh/internal/llm"
+	"github.com/nlsh/nlsh/internal/model"
 	"github.com/nlsh/nlsh/internal/prompt"
 )
 
@@ -21,9 +22,12 @@ type session struct {
 }
 
 func newSession(cfg config.Config) (*session, error) {
-	if cfg.ModelPath == "" {
-		return nil, errors.New("требуется путь к модели: --model или поле model_path в конфиге")
+	modelPath, err := resolveModelPath(cfg)
+	if err != nil {
+		return nil, err
 	}
+	cfg.ModelPath = modelPath
+
 	eng, err := llm.New(llm.Params{
 		ModelPath: cfg.ModelPath,
 		Threads:   cfg.Threads,
@@ -34,6 +38,29 @@ func newSession(cfg config.Config) (*session, error) {
 		return nil, fmt.Errorf("загрузка модели: %w", err)
 	}
 	return &session{cfg: cfg, engine: eng}, nil
+}
+
+func resolveModelPath(cfg config.Config) (string, error) {
+	if cfg.ModelPath != "" {
+		if _, err := os.Stat(cfg.ModelPath); err == nil {
+			return cfg.ModelPath, nil
+		}
+	}
+
+	if cfg.DefaultModel != "" {
+		d := model.New("")
+		if d.Exists(cfg.DefaultModel) {
+			return d.ModelPath(cfg.DefaultModel), nil
+		}
+	}
+
+	d := model.New("")
+	available := d.ListModels()
+	if len(available) > 0 {
+		return d.ModelPath(available[0].Name), nil
+	}
+
+	return "", errors.New("модель не найдена, выполни: nlsh model download")
 }
 
 func (s *session) close() {

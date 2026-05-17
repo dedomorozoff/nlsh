@@ -1,0 +1,71 @@
+# nlsh Windows Build Script
+# Run with: .\build.ps1
+
+$ErrorActionPreference = "Stop"
+
+$ProjectRoot = $PSScriptRoot
+if (-not $ProjectRoot) {
+    $ProjectRoot = Get-Location
+}
+
+$CMake = "${env:ProgramFiles}\CMake\bin\cmake.exe"
+$MinGWBin = "C:\ProgramData\mingw64\mingw64\bin"
+
+Write-Host "=== nlsh Windows Build ===" -ForegroundColor Cyan
+
+# 1. Init submodule if needed
+Write-Host "[1/4] Checking submodule..." -ForegroundColor Yellow
+if (-not (Test-Path "$ProjectRoot\third_party\llama.cpp\CMakeLists.txt")) {
+    git submodule update --init --recursive
+}
+
+# 2. Build llama.cpp
+Write-Host "[2/4] Building llama.cpp..." -ForegroundColor Yellow
+if (-not (Test-Path "$ProjectRoot\third_party\llama.cpp\build")) {
+    New-Item -ItemType Directory -Path "$ProjectRoot\third_party\llama.cpp\build" -Force | Out-Null
+}
+
+& $CMake -G "MinGW Makefiles" -S "$ProjectRoot\third_party\llama.cpp" -B "$ProjectRoot\third_party\llama.cpp\build" `
+    -DBUILD_SHARED_LIBS=OFF `
+    -DLLAMA_BUILD_TESTS=OFF `
+    -DLLAMA_BUILD_EXAMPLES=OFF `
+    -DLLAMA_BUILD_SERVER=OFF `
+    -DCMAKE_BUILD_TYPE=Release
+
+& $CMake --build "$ProjectRoot\third_party\llama.cpp\build" --config Release -j
+
+# 3. Build nlsh
+Write-Host "[3/4] Building nlsh..." -ForegroundColor Yellow
+$Version = git describe --always --dirty 2>$null
+if (-not $Version) { $Version = "dev" }
+
+go build -tags llama `
+    -ldflags "-s -w -X github.com/nlsh/nlsh/internal/cli.Version=$Version" `
+    -o "$ProjectRoot\bin\nlsh.exe" `
+    "$ProjectRoot\cmd\nlsh"
+
+# 4. Copy MinGW DLLs
+Write-Host "[4/4] Copying MinGW DLLs..." -ForegroundColor Yellow
+$DLLs = @(
+    "libstdc++-6.dll",
+    "libgcc_s_seh-1.dll",
+    "libgomp-1.dll",
+    "libwinpthread-1.dll"
+)
+
+foreach ($dll in $DLLs) {
+    $src = "$MinGWBin\$dll"
+    if (Test-Path $src) {
+        Copy-Item $src "$ProjectRoot\bin\" -Force
+        Write-Host "  Copied $dll" -ForegroundColor Green
+    } else {
+        Write-Host "  WARNING: $dll not found" -ForegroundColor Red
+    }
+}
+
+Write-Host ""
+Write-Host "=== Build complete ===" -ForegroundColor Green
+Write-Host "Executable: $ProjectRoot\bin\nlsh.exe"
+Write-Host ""
+Write-Host "Usage: bin\nlsh.exe ask ""list files"" --model <model.gguf>"
+Write-Host "       bin\nlsh.exe --help"
