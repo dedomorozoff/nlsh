@@ -9,7 +9,7 @@ import (
 )
 
 func renderResponse(w io.Writer, resp prompt.Response, _ policy.Decision) {
-	fmt.Fprintf(w, "%s[ai]%s ", cyan, reset)
+	fmt.Fprintf(w, "%s[nlsh]%s ", cyan, reset)
 	switch resp.Intent {
 	case prompt.IntentRunCommand:
 		if resp.Explanation != "" {

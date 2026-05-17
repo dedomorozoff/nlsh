@@ -80,6 +80,11 @@ func (errEmptyCommand) Error() string { return "empty command" }
 var errEmpty = errEmptyCommand{}
 
 func translateToPowerShell(cmd string) string {
+	// Don't translate if it looks like a Windows command already
+	if strings.Contains(cmd, "-Item") || strings.Contains(cmd, "Get-") || strings.Contains(cmd, "Set-") || strings.Contains(cmd, "sqlite3") {
+		return cmd
+	}
+
 	replacer := strings.NewReplacer(
 		"rm -rf", "Remove-Item -Recurse -Force",
 		"rm -r", "Remove-Item -Recurse -Force",
