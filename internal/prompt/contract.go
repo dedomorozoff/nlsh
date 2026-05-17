@@ -54,8 +54,8 @@ func (r *Response) Validate() error {
 			return errors.New("intent=explain, but explanation is empty")
 		}
 	case IntentAskClarification:
-		if strings.TrimSpace(r.Question) == "" {
-			return errors.New("intent=ask_clarification, but question is empty")
+		if strings.TrimSpace(r.Question) == "" && strings.TrimSpace(r.Explanation) == "" {
+			return errors.New("intent=ask_clarification, but question and explanation are empty")
 		}
 	default:
 		return fmt.Errorf("unknown intent: %q", r.Intent)

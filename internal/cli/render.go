@@ -18,6 +18,10 @@ func renderResponse(w io.Writer, resp prompt.Response, _ policy.Decision) {
 	case prompt.IntentExplain:
 		fmt.Fprintln(w, resp.Explanation)
 	case prompt.IntentAskClarification:
-		fmt.Fprintf(w, "  %s\n", resp.Question)
+		if resp.Question != "" {
+			fmt.Fprintf(w, "  %s\n", resp.Question)
+		} else if resp.Explanation != "" {
+			fmt.Fprintf(w, "  %s\n", resp.Explanation)
+		}
 	}
 }
