@@ -111,19 +111,16 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 }
 
 func buildPrompt(username, hostname, cwd string, isTTY bool) string {
-	// On Windows, username might be "HOSTNAME\user" - extract just the user part
 	if runtime.GOOS == "windows" && strings.Contains(username, `\`) {
 		parts := strings.Split(username, `\`)
 		username = parts[len(parts)-1]
 	}
 
+	short := shortPath(cwd)
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("%s[%s@%s %s]$ %s", gray, username, hostname, shortPath(cwd), reset)
+		return fmt.Sprintf("%s[%s]%s> ", gray, short, reset)
 	}
-	return fmt.Sprintf("%s%s@%s%s %s%s$ %s",
-		green, username, hostname,
-		cyan, shortPath(cwd),
-		reset, bold)
+	return fmt.Sprintf("%s[%s]> ", gray, short)
 }
 
 func shortPath(p string) string {
