@@ -3,10 +3,17 @@ package executor
 import (
 	"context"
 	"io"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 )
+
+func init() {
+	if runtime.GOOS == "windows" {
+		os.Setenv("CHCP", "65001")
+	}
+}
 
 // Result — итог выполнения команды.
 type Result struct {
@@ -17,7 +24,6 @@ type Result struct {
 }
 
 // Run исполняет одну shell-командную строку, проксируя её в системный shell.
-// Через shell, а не argv-разделение, чтобы корректно работали пайпы и `&&`.
 func Run(ctx context.Context, shell, command string) Result {
 	if strings.TrimSpace(command) == "" {
 		return Result{ExitCode: -1, Err: errEmpty}
@@ -27,7 +33,6 @@ func Run(ctx context.Context, shell, command string) Result {
 	}
 	args := shellArgs(shell)
 	cmd := exec.CommandContext(ctx, args[0], append(args[1:], command)...)
-	cmd.Env = append(cmd.Env, "PYTHONIOENCODING=utf-8")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = io.MultiWriter(&stdout)
@@ -48,18 +53,19 @@ func Run(ctx context.Context, shell, command string) Result {
 }
 
 // shellArgs подбирает интерпретатор и флаг для одиночной команды.
-// Linux/macOS: <shell> -c "<command>"; Windows: powershell -Command или cmd /C.
 func shellArgs(shell string) []string {
+	encodingSetup := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
+
 	if shell == "" {
 		if runtime.GOOS == "windows" {
-			return []string{"powershell", "-NoProfile", "-Command"}
+			return []string{"powershell", "-NoProfile", "-NoLogo", "-Command", encodingSetup}
 		}
 		return []string{"/bin/sh", "-c"}
 	}
 	low := strings.ToLower(shell)
 	switch {
 	case strings.Contains(low, "powershell"), strings.Contains(low, "pwsh"):
-		return []string{shell, "-NoProfile", "-Command"}
+		return []string{shell, "-NoProfile", "-NoLogo", "-Command", encodingSetup}
 	case strings.HasSuffix(low, "cmd"), strings.HasSuffix(low, "cmd.exe"):
 		return []string{shell, "/C"}
 	default:
