@@ -67,63 +67,74 @@ func (r *Response) Validate() error {
 // разбирает его в Response. Толерантен к префиксам/суффиксам типа
 // "Sure, here is the JSON:" и тройных бэктиков.
 func Parse(raw string) (Response, error) {
-	jsonText, ok := extractJSONObject(raw)
-	if !ok {
+	objects := extractAllJSONObjects(raw)
+	if len(objects) == 0 {
 		return Response{}, fmt.Errorf("no JSON object found in model output")
 	}
-	var resp Response
-	dec := json.NewDecoder(strings.NewReader(jsonText))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&resp); err != nil {
-		// Делаем второй проход без strict-режима: модели часто добавляют
-		// лишние поля, и нам важнее извлечь валидное ядро.
-		if err2 := json.Unmarshal([]byte(jsonText), &resp); err2 != nil {
-			return Response{}, fmt.Errorf("decode json: %w", err)
-		}
-	}
-	if err := resp.Validate(); err != nil {
-		return resp, fmt.Errorf("invalid response: %w", err)
-	}
-	return resp, nil
-}
 
-// extractJSONObject ищет первый сбалансированный JSON-объект в строке.
-// Учитывает кавычки и экранирование, чтобы скобки в строках не сбивали баланс.
-func extractJSONObject(s string) (string, bool) {
-	start := strings.IndexByte(s, '{')
-	if start == -1 {
-		return "", false
-	}
-	depth := 0
-	inString := false
-	escaped := false
-	for i := start; i < len(s); i++ {
-		c := s[i]
-		if inString {
-			if escaped {
-				escaped = false
+	var lastErr error
+	for _, jsonText := range objects {
+		var resp Response
+		dec := json.NewDecoder(strings.NewReader(jsonText))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&resp); err != nil {
+			if err2 := json.Unmarshal([]byte(jsonText), &resp); err2 != nil {
+				lastErr = fmt.Errorf("decode json: %w", err)
 				continue
 			}
-			if c == '\\' {
-				escaped = true
-				continue
-			}
-			if c == '"' {
-				inString = false
-			}
+		}
+		if err := resp.Validate(); err != nil {
+			lastErr = err
 			continue
 		}
-		switch c {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return s[start : i+1], true
+		return resp, nil
+	}
+	return Response{}, fmt.Errorf("invalid response: %w", lastErr)
+}
+
+// extractAllJSONObjects извлекает все сбалансированные JSON-объекты из строки.
+func extractAllJSONObjects(s string) []string {
+	var results []string
+	for {
+		start := strings.IndexByte(s, '{')
+		if start == -1 {
+			break
+		}
+		s = s[start:]
+		depth := 0
+		inString := false
+		escaped := false
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if inString {
+				if escaped {
+					escaped = false
+					continue
+				}
+				if c == '\\' {
+					escaped = true
+					continue
+				}
+				if c == '"' {
+					inString = false
+				}
+				continue
+			}
+			switch c {
+			case '"':
+				inString = true
+			case '{':
+				depth++
+			case '}':
+				depth--
+				if depth == 0 {
+					results = append(results, s[:i+1])
+					s = s[i+1:]
+					break
+				}
 			}
 		}
+		break
 	}
-	return "", false
+	return results
 }
