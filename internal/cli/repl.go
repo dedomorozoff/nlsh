@@ -26,6 +26,15 @@ var (
 	gray   = "\033[90m"
 )
 
+func flushOutput(w io.Writer) {
+	if f, ok := w.(*os.File); ok {
+		os.Stderr.Sync()
+		if f == os.Stdout || f == os.Stderr {
+			os.Stdout.Sync()
+		}
+	}
+}
+
 func newReplCmd(rf *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "repl",
@@ -67,12 +76,15 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 		promptStr := buildPrompt(usr.Username, hostname, cwd, isTTY)
 
 		fmt.Fprint(out, promptStr)
+		fmt.Fprint(out, " ")  // space after prompt
+		flushOutput(out)
 
 		if !scanner.Scan() {
 			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(errW, "scanner error: %v\n", err)
 				return err
 			}
-			fmt.Fprintln(out, "\nexit")
+			fmt.Fprintln(out, "\n[EOF - exit]")
 			return nil
 		}
 

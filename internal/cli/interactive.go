@@ -9,24 +9,34 @@ import (
 
 // runInteractive запускает REPL как дефолтное поведение root-команды.
 func runInteractive(cmd *cobra.Command, rf *rootFlags) error {
+	out := cmd.OutOrStdout()
+	errOut := cmd.ErrOrStderr()
+
+	fmt.Fprintln(out, "╔══════════════════════════════════════════╗")
+	fmt.Fprintln(out, "║          .nlsh — Natural Shell          ║")
+	fmt.Fprintln(out, "║   Type commands in natural language     ║")
+	fmt.Fprintln(out, "║   Example: show me all files           ║")
+	fmt.Fprintln(out, "║   Type /help for commands              ║")
+	fmt.Fprintln(out, "╚══════════════════════════════════════════╝")
+	fmt.Fprintln(out, "")
+
 	s, err := newSession(rf.cfg)
 	if err != nil {
+		fmt.Fprintln(errOut, "")
+		fmt.Fprintf(errOut, "  ✗ Model error: %v\n", err)
+		fmt.Fprintln(errOut, "  → Run: nlsh model download")
+		fmt.Fprintln(errOut, "")
 		return err
 	}
 	defer s.close()
 
-	out := cmd.OutOrStdout()
 	in := cmd.InOrStdin()
-
-	banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell\n%sНапиши запрос или /help для справки%s\n\n",
-		bold, cyan, reset, gray, reset)
-	fmt.Fprint(out, banner)
 
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	return replLoop(ctx, s, rf, in, out, cmd.ErrOrStderr())
+	return replLoop(ctx, s, rf, in, out, errOut)
 }
 
