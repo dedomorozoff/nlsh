@@ -98,7 +98,7 @@ func userConfigPath() (string, error) {
 
 func defaultShell() string {
 	if runtime.GOOS == "windows" {
-		return "powershell"
+		return "cmd"
 	}
 	if sh := os.Getenv("SHELL"); sh != "" {
 		return sh

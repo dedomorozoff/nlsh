@@ -28,9 +28,6 @@ func Run(ctx context.Context, shell, command string) Result {
 	if strings.TrimSpace(command) == "" {
 		return Result{ExitCode: -1, Err: errEmpty}
 	}
-	if runtime.GOOS == "windows" && strings.Contains(strings.ToLower(shell), "powershell") {
-		command = translateToPowerShell(command)
-	}
 	args := shellArgs(shell)
 	cmd := exec.CommandContext(ctx, args[0], append(args[1:], command)...)
 
@@ -54,18 +51,16 @@ func Run(ctx context.Context, shell, command string) Result {
 
 // shellArgs подбирает интерпретатор и флаг для одиночной команды.
 func shellArgs(shell string) []string {
-	encodingSetup := "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
-
 	if shell == "" {
 		if runtime.GOOS == "windows" {
-			return []string{"powershell", "-NoProfile", "-NoLogo", "-Command", encodingSetup}
+			return []string{"cmd", "/C"}
 		}
 		return []string{"/bin/sh", "-c"}
 	}
 	low := strings.ToLower(shell)
 	switch {
 	case strings.Contains(low, "powershell"), strings.Contains(low, "pwsh"):
-		return []string{shell, "-NoProfile", "-NoLogo", "-Command", encodingSetup}
+		return []string{shell, "-NoProfile", "-NoLogo", "-Command"}
 	case strings.HasSuffix(low, "cmd"), strings.HasSuffix(low, "cmd.exe"):
 		return []string{shell, "/C"}
 	default:
@@ -78,30 +73,3 @@ type errEmptyCommand struct{}
 func (errEmptyCommand) Error() string { return "empty command" }
 
 var errEmpty = errEmptyCommand{}
-
-func translateToPowerShell(cmd string) string {
-	// Don't translate if it looks like a Windows command already
-	if strings.Contains(cmd, "-Item") || strings.Contains(cmd, "Get-") || strings.Contains(cmd, "Set-") || strings.Contains(cmd, "sqlite3") {
-		return cmd
-	}
-
-	replacer := strings.NewReplacer(
-		"rm -rf", "Remove-Item -Recurse -Force",
-		"rm -r", "Remove-Item -Recurse -Force",
-		"rm -f", "Remove-Item -Force",
-		"rm ", "Remove-Item ",
-		"mkdir ", "New-Item -ItemType Directory ",
-		"touch ", "New-Item -ItemType File ",
-		"cat ", "Get-Content ",
-		"ls ", "Get-ChildItem ",
-		"ls", "Get-ChildItem",
-		"cp ", "Copy-Item ",
-		"mv ", "Move-Item ",
-		"pwd", "Get-Location",
-		"echo ", "Write-Output ",
-		"ping -c ", "Test-Connection -Count ",
-		"curl ", "Invoke-WebRequest ",
-		"wget ", "Invoke-WebRequest ",
-	)
-	return replacer.Replace(cmd)
-}
