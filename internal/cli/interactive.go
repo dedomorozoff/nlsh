@@ -13,10 +13,10 @@ func runInteractive(cmd *cobra.Command, rf *rootFlags) error {
 	errOut := cmd.ErrOrStderr()
 
 	fmt.Fprintln(out, "╔══════════════════════════════════════════╗")
-	fmt.Fprintln(out, "║          .nlsh — Natural Shell          ║")
-	fmt.Fprintln(out, "║   Type commands in natural language     ║")
-	fmt.Fprintln(out, "║   Example: show me all files           ║")
-	fmt.Fprintln(out, "║   Type /help for commands              ║")
+	fmt.Fprintln(out, "║          .nlsh — Natural Shell           ║")
+	fmt.Fprintln(out, "║   Type commands in natural language      ║")
+	fmt.Fprintln(out, "║   Example: show me all files             ║")
+	fmt.Fprintln(out, "║   Type /help for commands.               ║")
 	fmt.Fprintln(out, "╚══════════════════════════════════════════╝")
 	fmt.Fprintln(out, "")
 
@@ -39,4 +39,3 @@ func runInteractive(cmd *cobra.Command, rf *rootFlags) error {
 
 	return replLoop(ctx, s, rf, in, out, errOut)
 }
-

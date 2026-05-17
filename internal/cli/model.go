@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"sort"
 	"strconv"
 
 	"github.com/nlsh/nlsh/internal/config"
@@ -121,64 +119,4 @@ func addModelCommand(root *cobra.Command, rf *rootFlags) {
 		Short: "Скачать модель (shortcut для model download)",
 		RunE:  modelCmd.Commands()[1].RunE,
 	})
-}
-
-func sortModelList(list []model.ModelInfo) {
-	sort.Slice(list, func(i, j int) bool {
-		return list[i].SizeMB < list[j].SizeMB
-	})
-}
-
-func getOrDownloadModel(cmd *cobra.Command, cfg config.Config, dl func(string)) (string, error) {
-	if cfg.ModelPath != "" {
-		if _, err := os.Stat(cfg.ModelPath); err == nil {
-			return cfg.ModelPath, nil
-		}
-	}
-
-	if cfg.DefaultModel != "" {
-		d := model.New("")
-		if d.Exists(cfg.DefaultModel) {
-			return d.ModelPath(cfg.DefaultModel), nil
-		}
-	}
-
-	d := model.New("")
-	available := d.ListModels()
-	if len(available) > 0 {
-		return d.ModelPath(available[0].Name), nil
-	}
-
-	recommended := model.RecommendModel()
-
-	fmt.Fprintf(cmd.OutOrStdout(), `
-nlsh: модель не найдена!
-
-Рекомендуемая модель: %s (%d MB)
-%s
-
-Скачать? [Y/n]: `, recommended.Name, recommended.SizeMB, recommended.Description)
-
-	var answer string
-	fmt.Fscan(cmd.InOrStdin(), &answer)
-
-	if answer == "" || answer == "y" || answer == "Y" {
-		fmt.Fprintf(cmd.OutOrStdout(), "Скачиваю...\n")
-		path, err := d.Download(recommended, func(dl, total int) {
-			if total > 0 {
-				fmt.Fprintf(cmd.OutOrStdout(), "\r  %d%%", dl*100/total)
-			}
-		})
-		if err != nil {
-			return "", fmt.Errorf("download failed: %w", err)
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "\nГотово!")
-
-		cfg.DefaultModel = recommended.Name
-		config.Save(cfg)
-
-		return path, nil
-	}
-
-	return "", fmt.Errorf("модель не выбрана, используй: nlsh model download")
 }

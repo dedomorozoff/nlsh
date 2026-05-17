@@ -117,10 +117,7 @@ func buildPrompt(username, hostname, cwd string, isTTY bool) string {
 	}
 
 	short := shortPath(cwd)
-	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("%s[%s]%s> ", gray, short, reset)
-	}
-	return fmt.Sprintf("%s[%s]> ", gray, short)
+	return fmt.Sprintf("%s[%s]%s> ", gray, short, reset)
 }
 
 func shortPath(p string) string {
@@ -151,15 +148,6 @@ func isTerminal(r io.Reader) bool {
 		return (info.Mode() & os.ModeCharDevice) != 0
 	}
 	return false
-}
-
-func readLine(in io.Reader, out io.Writer) (string, error) {
-	reader := bufio.NewReader(in)
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	return strings.TrimRight(line, "\r\n"), nil
 }
 
 func handleSlash(line string, out io.Writer) (stop bool) {

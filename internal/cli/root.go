@@ -9,8 +9,7 @@ import (
 
 // rootFlags хранит общие флаги, разделяемые подкомандами.
 type rootFlags struct {
-	cfg       config.Config
-	configMod bool
+	cfg config.Config
 }
 
 // NewRootCmd собирает корневую cobra-команду.
