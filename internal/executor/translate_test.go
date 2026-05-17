@@ -1,45 +1,30 @@
 package executor
 
-import (
-	"testing"
-)
+import "testing"
 
-func TestTranslateToPowerShell(t *testing.T) {
+func TestTranslateToWindows(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected string
 	}{
-		// rm variants
-		{"rm -rf /tmp", "Remove-Item -Recurse -Force /tmp"},
-		{"rm -r /tmp", "Remove-Item -Recurse -Force /tmp"},
-		{"rm -f file.txt", "Remove-Item -Force file.txt"},
-		{"rm file.txt", "Remove-Item file.txt"},
-		
-		// file operations
-		{"mkdir foo", "New-Item -ItemType Directory foo"},
-		{"touch file.txt", "New-Item -ItemType File file.txt"},
-		{"cat file.txt", "Get-Content file.txt"},
-		{"ls", "Get-ChildItem"},
-		{"ls -la", "Get-ChildItem -la"},
-		{"cp src dst", "Copy-Item src dst"},
-		{"mv src dst", "Move-Item src dst"},
-		
-		// system
-		{"pwd", "Get-Location"},
-		{"echo hello", "Write-Output hello"},
-		
-		// network
-		{"ping -c 4 ya.ru", "Test-Connection -Count 4 ya.ru"},
-		{"curl http://example.com", "Invoke-WebRequest http://example.com"},
-		{"wget http://example.com", "Invoke-WebRequest http://example.com"},
-		
-		// no translation needed
+		// Should translate
+		{"rm -rf /tmp", "rmdir /s /q /tmp"},
+		{"mkdir foo", "mkdir foo"},
+		{"ls", "dir"},
+		{"cat file.txt", "type file.txt"},
+		{"cp src dst", "copy src dst"},
+		{"clear", "cls"},
+
+		// Should NOT translate (Windows/PS commands)
+		{"git status", "git status"},
+		{"sqlite3 db.sqlite", "sqlite3 db.sqlite"},
+		{"python script.py", "python script.py"},
 		{"Get-ChildItem", "Get-ChildItem"},
-		{"Remove-Item foo", "Remove-Item foo"},
+		{"Invoke-WebRequest https://example.com", "Invoke-WebRequest https://example.com"},
 	}
 
 	for _, tc := range tests {
-		result := translateToPowerShell(tc.input)
+		result := translateToWindows(tc.input)
 		if result != tc.expected {
 			t.Errorf("translate(%q) = %q, want %q", tc.input, result, tc.expected)
 		}

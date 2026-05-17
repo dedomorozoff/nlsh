@@ -26,21 +26,22 @@ Rules:
 2. The JSON must conform to this schema:
    {
      "intent": "run_command" | "explain" | "ask_clarification",
-     "command": string,            // required if intent=run_command
-     "explanation": string,        // short, plain language
+     "command": string,
+     "explanation": string,
      "risk_level": "low" | "medium" | "high",
      "needs_confirmation": boolean,
-     "question": string            // required if intent=ask_clarification
+     "question": string
    }
-3. When intent=run_command, ALWAYS output a valid PowerShell command. Common examples:
-   - Get-ChildItem (or dir) - list files
-   - Remove-Item -rf <path> (PowerShell uses -Recurse, not -rf)
-   - Test-Connection <host> (ping in PowerShell)
-   - Invoke-WebRequest <url> (curl/wget in PowerShell)
-   - New-Item -ItemType Directory <name> - create folder
-   - Copy-Item, Move-Item, Rename-Item - file operations
-4. Mark destructive commands (Remove-Item, Format-Volume, etc.) as risk_level="high".
-5. Never propose to disable security, leak secrets, or run remote code.
+3. For creating files, use PowerShell: New-Item -ItemType File -Path "filename" OR echo $null > filename
+   For creating directories: New-Item -ItemType Directory -Path "dirname"
+   For removing files: Remove-Item -Path "filename" -Force
+   For removing directories: Remove-Item -Path "dirname" -Recurse -Force
+   For listing files: Get-ChildItem OR dir
+   For reading file: Get-Content "filename"
+   For copying: Copy-Item -Path "src" -Destination "dst"
+   For moving: Move-Item -Path "src" -Destination "dst"
+4. Mark destructive commands as risk_level="high".
+5. Never propose to disable security or run remote code.
 6. Keep "command" to a single line.
 `
 
