@@ -20,18 +20,26 @@ jobs:
             goos: linux
             goarch: amd64
             ext: ""
+            shell: bash
           - os: windows-latest
             goos: windows
             goarch: amd64
             ext: .exe
+            shell: pwsh
           - os: macos-latest
             goos: darwin
             goarch: arm64
             ext: ""
+            shell: bash
           - os: macos-latest
             goos: darwin
             goarch: amd64
             ext: ""
+            shell: bash
+
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
 
     steps:
       - uses: actions/checkout@v4
@@ -43,26 +51,22 @@ jobs:
         with:
           go-version: '1.23'
 
-      - name: Install dependencies (Linux)
+      - name: Install deps (Linux)
         if: matrix.goos == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake
 
-      - name: Install dependencies (macOS)
+      - name: Install deps (macOS)
         if: matrix.goos == 'darwin'
         run: brew install cmake
 
       - name: Build llama.cpp
         run: |
-          cmake -G "Unix Makefiles" -S third_party/llama.cpp -B third_party/llama.cpp/build \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DCMAKE_BUILD_TYPE=Release
+          cmake -G "Unix Makefiles" -S third_party/llama.cpp -B third_party/llama.cpp/build -DBUILD_SHARED_LIBS=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
           cmake --build third_party/llama.cpp/build --config Release -j$(nproc)
 
-      - name: Build nlsh with llama
+      - name: Build nlsh
         run: |
           mkdir -p bin
           go build -tags llama -ldflags="-s -w" -o bin/nlsh${{ matrix.ext }} ./cmd/nlsh
@@ -93,9 +97,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          for f in release/nlsh-*/*; do
-            cp "$f" dist/
-          done
+          cp release/nlsh-*/* dist/
           ls -la dist/
 
       - name: Create Release
