@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/nlsh/nlsh/internal/config"
-	"github.com/nlsh/nlsh/internal/model"
+	"github.com/dedomorozoff/nlsh/internal/config"
+	"github.com/dedomorozoff/nlsh/internal/model"
 	"github.com/spf13/cobra"
 )
 

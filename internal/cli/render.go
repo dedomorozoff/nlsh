@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/nlsh/nlsh/internal/policy"
-	"github.com/nlsh/nlsh/internal/prompt"
+	"github.com/dedomorozoff/nlsh/internal/policy"
+	"github.com/dedomorozoff/nlsh/internal/prompt"
 )
 
 func renderResponse(w io.Writer, resp prompt.Response, _ policy.Decision) {

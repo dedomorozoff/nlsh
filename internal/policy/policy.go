@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nlsh/nlsh/internal/prompt"
+	"github.com/dedomorozoff/nlsh/internal/prompt"
 )
 
 // Decision — результат проверки команды политикой.

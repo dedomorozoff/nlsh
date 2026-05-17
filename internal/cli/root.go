@@ -3,7 +3,7 @@ package cli
 import (
 	"strings"
 
-	"github.com/nlsh/nlsh/internal/config"
+	"github.com/dedomorozoff/nlsh/internal/config"
 	"github.com/spf13/cobra"
 )
 

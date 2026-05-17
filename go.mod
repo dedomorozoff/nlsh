@@ -1,4 +1,4 @@
-module github.com/nlsh/nlsh
+module github.com/dedomorozoff/nlsh
 
 go 1.23.0
 

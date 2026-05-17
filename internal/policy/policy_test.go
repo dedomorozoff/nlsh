@@ -3,7 +3,7 @@ package policy
 import (
 	"testing"
 
-	"github.com/nlsh/nlsh/internal/prompt"
+	"github.com/dedomorozoff/nlsh/internal/prompt"
 )
 
 func TestEvaluate_BlocksRmRfRoot(t *testing.T) {

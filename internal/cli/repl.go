@@ -11,8 +11,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nlsh/nlsh/internal/executor"
-	"github.com/nlsh/nlsh/internal/prompt"
+	"github.com/dedomorozoff/nlsh/internal/executor"
+	"github.com/dedomorozoff/nlsh/internal/prompt"
 	"github.com/spf13/cobra"
 )
 

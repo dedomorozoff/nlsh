@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nlsh/nlsh/internal/config"
-	"github.com/nlsh/nlsh/internal/llm"
-	"github.com/nlsh/nlsh/internal/model"
-	"github.com/nlsh/nlsh/internal/prompt"
+	"github.com/dedomorozoff/nlsh/internal/config"
+	"github.com/dedomorozoff/nlsh/internal/llm"
+	"github.com/dedomorozoff/nlsh/internal/model"
+	"github.com/dedomorozoff/nlsh/internal/prompt"
 )
 
 // session инкапсулирует движок и собранный для него контекст промпта.
