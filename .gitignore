@@ -3,6 +3,7 @@
 /dist/
 nlsh
 nlsh.exe
+!/cmd/nlsh/
 
 # Build artifacts
 *.o
