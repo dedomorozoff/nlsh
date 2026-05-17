@@ -5,7 +5,7 @@ LLAMA_BUILD := $(LLAMA_DIR)/build
 
 GO := go
 GOFLAGS ?=
-LDFLAGS ?= -s -w -X github.com/nlsh/nlsh/internal/cli.Version=$(shell git describe --always --dirty 2>/dev/null || echo dev)
+LDFLAGS ?= -s -w -X github.com/dedomorozoff/nlsh/internal/cli.Version=$(shell git describe --always --dirty 2>/dev/null || echo dev)
 
 # По умолчанию собираем CPU-вариант. Через GPU=1 включаются ускорители.
 GPU ?= 0

@@ -59,7 +59,10 @@ jobs:
       - name: Build stub (no llama)
         run: |
           mkdir -p bin
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -ldflags="-s -w" -o "bin/nlsh${{ matrix.ext }}" ./cmd/nlsh
+          go build -ldflags="-s -w" -o "bin/nlsh${{ matrix.ext }}" ./cmd/nlsh
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

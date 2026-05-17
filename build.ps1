@@ -40,7 +40,7 @@ $Version = git describe --always --dirty 2>$null
 if (-not $Version) { $Version = "dev" }
 
 go build -tags llama `
-    -ldflags "-s -w -X github.com/nlsh/nlsh/internal/cli.Version=$Version" `
+    -ldflags "-s -w -X github.com/dedomorozoff/nlsh/internal/cli.Version=$Version" `
     -o "$ProjectRoot\bin\nlsh.exe" `
     "$ProjectRoot\cmd\nlsh"
 
