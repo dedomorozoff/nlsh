@@ -45,6 +45,10 @@ func resolveModelPath(cfg config.Config) (string, error) {
 		if _, err := os.Stat(cfg.ModelPath); err == nil {
 			return cfg.ModelPath, nil
 		}
+		d := model.New("")
+		if d.Exists(cfg.ModelPath) {
+			return d.ModelPath(cfg.ModelPath), nil
+		}
 	}
 
 	if cfg.DefaultModel != "" {
@@ -58,6 +62,11 @@ func resolveModelPath(cfg config.Config) (string, error) {
 	available := d.ListModels()
 	if len(available) > 0 {
 		return d.ModelPath(available[0].Name), nil
+	}
+
+	all, _ := d.ListAllModels()
+	if len(all) > 0 {
+		return d.ModelPath(all[0].Name), nil
 	}
 
 	return "", errors.New("модель не найдена, выполни: nlsh model download")

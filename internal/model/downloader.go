@@ -85,8 +85,53 @@ func (d *Downloader) ListModels() []ModelInfo {
 	return available
 }
 
+func (d *Downloader) ListAllModels() ([]ModelInfo, error) {
+	var models []ModelInfo
+	entries, err := os.ReadDir(d.modelDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return models, nil
+		}
+		return nil, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".gguf") {
+			models = append(models, ModelInfo{Name: e.Name()})
+		}
+	}
+	return models, nil
+}
+
 func (d *Downloader) EnsureDir() error {
 	return os.MkdirAll(d.modelDir, 0755)
+}
+
+func (d *Downloader) DownloadURL(url string, progress func(dl int, total int)) (string, error) {
+	if err := d.EnsureDir(); err != nil {
+		return "", fmt.Errorf("create model dir: %w", err)
+	}
+
+	name := filepath.Base(url)
+	if !strings.HasSuffix(strings.ToLower(name), ".gguf") {
+		name += ".gguf"
+	}
+
+	destPath := d.ModelPath(name)
+	if d.Exists(name) {
+		return destPath, nil
+	}
+
+	tmpPath := destPath + ".tmp"
+	if err := d.downloadFile(url, tmpPath, progress); err != nil {
+		os.Remove(tmpPath)
+		return "", fmt.Errorf("download %s: %w", name, err)
+	}
+
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		return "", fmt.Errorf("rename tmp file: %w", err)
+	}
+
+	return destPath, nil
 }
 
 func (d *Downloader) Download(info ModelInfo, progress func(dl int, total int)) (string, error) {
