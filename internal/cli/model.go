@@ -145,6 +145,20 @@ func newModelCmd(rf *rootFlags) *cobra.Command {
 		},
 	})
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "use [имя]",
+		Short: "Выбрать скачанную модель по умолчанию",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d := model.New("")
+			if !d.Exists(args[0]) {
+				return fmt.Errorf("модель %q не найдена в %s", args[0], d.ModelPath(""))
+			}
+			setDefault(cmd, args[0])
+			return nil
+		},
+	})
+
 	return cmd
 }
 
