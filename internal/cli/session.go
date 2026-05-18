@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dedomorozoff/nlsh/internal/config"
 	"github.com/dedomorozoff/nlsh/internal/llm"
@@ -13,12 +15,20 @@ import (
 	"github.com/dedomorozoff/nlsh/internal/prompt"
 )
 
+// HistoryEntry — запись в истории команд.
+type HistoryEntry struct {
+	Timestamp time.Time `json:"timestamp"`
+	Command   string    `json:"command"`
+	Source    string    `json:"source"` // "llm" or "direct"
+}
+
 // session инкапсулирует движок и собранный для него контекст промпта.
 // Один session живёт всё время REPL или одной CLI-команды.
 type session struct {
 	cfg    config.Config
 	engine llm.Engine
 	recent []string
+	hist   []HistoryEntry
 }
 
 func newSession(cfg config.Config) (*session, error) {
@@ -76,6 +86,44 @@ func (s *session) close() {
 	if s.engine != nil {
 		_ = s.engine.Close()
 	}
+	// Save history
+	_ = s.saveHistory()
+}
+
+// saveHistory сохраняет историю в файл.
+func (s *session) saveHistory() error {
+	if s.cfg.HistoryFile == "" {
+		return nil
+	}
+
+	// Keep only last 1000 entries
+	start := 0
+	if len(s.hist) > 1000 {
+		start = len(s.hist) - 1000
+	}
+	hist := s.hist[start:]
+
+	// Append to history file
+	f, err := os.OpenFile(s.cfg.HistoryFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open history file: %w", err)
+	}
+	defer f.Close()
+
+	for _, entry := range hist {
+		data, _ := json.Marshal(entry)
+		_, _ = f.WriteString(string(data) + "\n")
+	}
+	return nil
+}
+
+// addHistory добавляет команду в историю сессии.
+func (s *session) addHistory(cmd, source string) {
+	s.hist = append(s.hist, HistoryEntry{
+		Timestamp: time.Now(),
+		Command:   cmd,
+		Source:    source,
+	})
 }
 
 // ask отправляет запрос модели и пытается вытащить из ответа Response.
@@ -130,4 +178,10 @@ func (s *session) addRecent(cmd string) {
 	if len(s.recent) > 10 {
 		s.recent = s.recent[len(s.recent)-10:]
 	}
+}
+
+// addRecentAndHistory добавляет команду в recent и историю.
+func (s *session) addRecentAndHistory(cmd, source string) {
+	s.addRecent(cmd)
+	s.addHistory(cmd, source)
 }

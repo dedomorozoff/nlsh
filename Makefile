@@ -9,7 +9,7 @@ LDFLAGS ?= -s -w -X github.com/dedomorozoff/nlsh/internal/cli.Version=$(shell gi
 GPU ?= 0
 CMAKE_FLAGS := -DBUILD_SHARED_LIBS=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF
 ifeq ($(GPU),cuda)
-CMAKE_FLAGS += -DGGML_CUDA=ON
+CMAKE_FLAGS += -DGGML_CUDA=ON -DCMAKE_CUDA_HOST_COMPILER="C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe"
 endif
 ifeq ($(GPU),metal)
 CMAKE_FLAGS += -DGGML_METAL=ON

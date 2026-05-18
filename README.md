@@ -1,55 +1,95 @@
 # nlsh — Natural Language Shell
 
-`nlsh` — это shell, в которой можно общаться с системой на естественном языке.
-Локальная легковесная LLM (GGUF через `llama.cpp`) встраивается прямо в бинарь
-через CGO — без HTTP-сервера и без внешних процессов.
+`nlsh` is a shell where you can communicate with the system in natural language.
+A local lightweight LLM (GGUF via `llama.cpp`) is embedded directly into the binary
+via CGO — no HTTP server and no external processes.
 
-> Linux-first. Поддержка macOS/Windows возможна, но не основной приоритет.
+> Linux-first. macOS/Windows support is possible but not the primary focus.
 
-## Возможности (MVP)
+## Features (MVP)
 
-- `nlsh ask "..."` — объяснить, что и как сделать, ничего не выполняя.
-- `nlsh run "..."` — предложить shell-команду и выполнить её после подтверждения.
-- `nlsh repl` — интерактивный режим с историей.
-- Жёсткий JSON-контракт ответа модели.
-- Safety policy gate против опасных команд (`rm -rf /`, `mkfs`, fork-бомбы и т. п.).
+- `nlsh ask "..."` — explain what and how to do, without executing anything.
+- `nlsh run "..."` — suggest a shell command and execute it after confirmation.
+- `nlsh repl` — interactive mode with history and bash-like keybindings.
+- Hard JSON contract for model responses.
+- Safety policy gate against dangerous commands (`rm -rf /`, `mkfs`, fork bombs, etc.).
 
-## Требования
+## REPL Features
+
+### Bash-like Keybindings (via readline)
+
+| Keybinding | Action |
+|------------|--------|
+| `Ctrl+A` | move to beginning of line |
+| `Ctrl+E` | move to end of line |
+| `Ctrl+U` | delete to beginning of line |
+| `Ctrl+K` | delete to end of line |
+| `Ctrl+L` | clear screen |
+| `Ctrl+R` | reverse history search |
+| `Ctrl+S` | forward history search |
+| `Ctrl+P` | previous command |
+| `Ctrl+N` | next command |
+| `Alt+B` | backward by word |
+| `Alt+F` | forward by word |
+| `Alt+D` | delete word forward |
+| `Ctrl+W` | delete word backward |
+
+### Special Keys
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+C` | interrupt current operation (does not exit REPL) |
+| `Ctrl+D` | exit REPL (EOF) |
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | show help |
+| `/exit` | exit REPL |
+| `/cd [path]` | change directory |
+| `/clear` | clear screen |
+| `/pwd` | show current directory |
+| `/history` | show history |
+| `/bind keys` | show keybindings list |
+| `!command` | execute command directly |
+
+## Requirements
 
 - Go 1.22+
 - C/C++ тулчейн (gcc/clang, make, cmake)
 - Git с поддержкой submodules
 - GGUF-модель (например, Qwen2.5-3B-Instruct, Llama-3.2-3B-Instruct, Phi-3.5-mini)
 
-## Сборка
+## Building
 
 ```bash
 git submodule update --init --recursive
-make llama       # собрать статическую libllama
-make build       # собрать бинарь nlsh
+make llama       # build static libllama
+make build       # build nlsh binary
 ```
 
-Подробности по флагам/ускорителям — в `Makefile` (`make help`).
+Details on flags/speedups — in `Makefile` (`make help`).
 
-## Запуск
+## Usage
 
 ```bash
 nlsh --model /path/to/model.gguf repl
 ```
 
-## Структура проекта
+## Project Structure
 
 ```
-cmd/nlsh/            точка входа CLI
-internal/cli/        cobra-команды (ask, run, repl)
-internal/llm/        CGO-обёртка над llama.cpp
-internal/prompt/     системный промпт + JSON-контракт ответа
+cmd/nlsh/            CLI entry point
+internal/cli/        cobra commands (ask, run, repl)
+internal/llm/        CGO wrapper over llama.cpp
+internal/prompt/     system prompt + JSON response contract
 internal/policy/     safety gate (denylist + risk scoring)
-internal/executor/   запуск shell-команд
-internal/config/     загрузка конфига
-third_party/llama.cpp/  submodule с llama.cpp
+internal/executor/   shell command execution
+internal/config/     config loading
+third_party/llama.cpp/  submodule with llama.cpp
 ```
 
-## Статус
+## Status
 
-Ранний MVP. См. план в `.cursor/plans/`.
+Early MVP. See plan in `.cursor/plans/`.

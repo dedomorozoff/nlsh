@@ -8,11 +8,13 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chzyer/readline"
 	"github.com/dedomorozoff/nlsh/internal/executor"
 	"github.com/dedomorozoff/nlsh/internal/prompt"
 	"github.com/spf13/cobra"
@@ -58,6 +60,11 @@ func newReplCmd(rf *rootFlags) *cobra.Command {
 			ctx := cmd.Context()
 			if ctx == nil {
 				ctx = context.Background()
+			}
+
+			// Try readline, fallback to bufio if not TTY
+			if isTTY := isTerminal(in); isTTY {
+				return replLoopReadline(ctx, s, rf, out, cmd.ErrOrStderr())
 			}
 			return replLoop(ctx, s, rf, in, out, cmd.ErrOrStderr())
 		},
@@ -148,6 +155,84 @@ func isTerminal(r io.Reader) bool {
 	return false
 }
 
+// replLoopReadline — REPL с readline-подобными хоткеями
+func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW io.Writer) error {
+	usr, _ := user.Current()
+	hostname, _ := os.Hostname()
+
+	// History file path
+	historyPath := filepath.Join(filepath.Dir(rf.cfg.HistoryFile), "readline_history")
+	_ = os.MkdirAll(filepath.Dir(historyPath), 0755)
+
+	// Initialize readline with history
+	config := &readline.Config{
+		Prompt:          buildPrompt(usr.Username, hostname, "", false) + " ",
+		HistoryFile:     historyPath,
+		HistoryLimit:    1000,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	}
+
+	// Filter input for special keys
+	config.FuncFilterInputRune = func(r rune) (rune, bool) {
+		// Ctrl+L (0x0c) - clear screen
+		if r == 0x0c {
+			clearScreen(out)
+			return 0, false
+		}
+		return r, true
+	}
+
+	rl, err := readline.NewEx(config)
+	if err != nil {
+		// Fallback to basic mode if readline fails
+		fmt.Fprintf(errW, "%sreadline initialization failed: %v, using basic mode%s\n", yellow, err, reset)
+		return replLoop(ctx, s, rf, os.Stdin, out, errW)
+	}
+	defer rl.Close()
+
+	for {
+		cwd, _ := os.Getwd()
+		rl.SetPrompt(buildPrompt(usr.Username, hostname, cwd, true) + " ")
+
+		line, err := rl.Readline()
+		if err != nil {
+			if errors.Is(err, readline.ErrInterrupt) {
+				fmt.Fprintln(out, "\n^C")
+				continue
+			}
+			if errors.Is(err, io.EOF) {
+				fmt.Fprintln(out, "\n[EOF - exit]")
+				return nil
+			}
+			fmt.Fprintf(errW, "%sreadline error: %v%s\n", red, err, reset)
+			return err
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Add to history
+		_ = rl.SaveHistory(line)
+
+		if strings.HasPrefix(line, "/") {
+			if stop := handleSlash(line, out); stop {
+				return nil
+			}
+			continue
+		}
+
+		if err := handleTurn(ctx, s, rf, line, os.Stdin, out, errW); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			fmt.Fprintf(errW, "%s%s%s\n", red, err, reset)
+		}
+	}
+}
+
 func handleSlash(line string, out io.Writer) (stop bool) {
 	switch {
 	case line == "/exit", line == "/quit", line == "exit", line == "quit":
@@ -173,7 +258,9 @@ func handleSlash(line string, out io.Writer) (stop bool) {
 		wd, _ := os.Getwd()
 		fmt.Fprintln(out, wd)
 	case line == "/history", line == "history":
-		fmt.Fprintln(out, "история...")
+		fmt.Fprintln(out, "история... (используйте Ctrl+R для поиска)")
+	case line == "/bind", line == "/bind keys":
+		showKeyBindings(out)
 	default:
 		if strings.HasPrefix(line, "!") {
 			cmd := strings.TrimSpace(strings.TrimPrefix(line, "!"))
@@ -185,11 +272,45 @@ func handleSlash(line string, out io.Writer) (stop bool) {
 	return false
 }
 
+func showKeyBindings(out io.Writer) {
+	fmt.Fprintf(out, "%s%s=== Доступные хоткеи ===%s\n\n", bold, cyan, reset)
+	fmt.Fprintf(out, "%sОсновные:%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sCtrl+A%s     — начало строки\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+E%s     — конец строки\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+U%s     — удалить до начала строки\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+K%s     — удалить до конца строки\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+L%s     — очистить экран\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+R%s     — обратный поиск по истории\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+S%s     — прямой поиск по истории\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+P%s     — предыдущая команда\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+N%s     — следующая команда\n", yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+B%s      — назад по слову\n", yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+F%s      — вперед по слову\n", yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+D%s      — удалить слово вперед\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+W%s     — удалить слово назад\n", yellow, reset)
+	fmt.Fprintf(out, "\n%sСпециальные:%s\n", bold, reset)
+	fmt.Fprintf(out, "  %s/exit%s      — выйти из REPL\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/cd%s путь   — сменить директорию\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/clear%s     — очистить экран\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/pwd%s       — показать текущую директорию\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/history%s   — показать историю\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/bind keys%s — показать этот список\n", yellow, reset)
+	fmt.Fprintf(out, "  %s!команда%s   — выполнить команду напрямую\n", yellow, reset)
+}
+
 func showHelp(out io.Writer) {
 	fmt.Fprintf(out, "%s%s=== nlsh справка ===%s\n\n", bold, cyan, reset)
 	fmt.Fprintf(out, "%sОписание:%s\n  nlsh — оболочка с естественным языком. Пишешь \"покажи файлы\",\n  а он выполняет \"ls -la\".\n\n", bold, reset)
 	fmt.Fprintf(out, "%sКоманды:%s\n  просто текст    — отправить запрос LLM\n  %s!команда%s     — выполнить команду напрямую\n  %s/cd%s путь     — сменить директорию\n  %s/clear%s       — очистить экран\n  %s/pwd%s         — показать текущую директорию\n  %s/history%s     — показать историю\n  %s/exit%s        — выйти\n\n", bold, reset,
 		yellow, reset, yellow, reset, yellow, reset, yellow, reset, yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "%sХоткеи (bash-стиль):%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sCtrl+A%s     — начало строки    %sCtrl+E%s     — конец строки\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+R%s     — поиск истории    %sCtrl+S%s     — поиск вперёд\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+P%s     — предыдущая       %sCtrl+N%s     — следующая\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+U%s     — удалить до начала %sCtrl+K%s     — удалить до конца\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+B%s      — назад по слову    %sAlt+F%s      — вперед по слову\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+W%s     — удалить слово назад %sAlt+D%s    — удалить слово вперед\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+L%s     — очистить экран    %s/exit%s      — выйти\n\n", yellow, reset, yellow, reset)
 	fmt.Fprintf(out, "%sПримеры:%s\n  покажи все txt файлы\n  найди ошибки в логах\n  запусти docker\n\n", bold, reset)
 	fmt.Fprintf(out, "%s Режим по умолчанию: %sdry-run%s (команды не выполняются).\n  Используй --dry-run=false чтобы включить.\n\n", bold, green, reset)
 }
@@ -208,11 +329,11 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 			if shouldExit {
 				return context.Canceled
 			}
-			s.addRecent(raw)
+			s.addRecentAndHistory(raw, "direct")
 			return nil
 		}
 		res := executor.Run(ctx, rf.cfg.Shell, raw)
-		s.addRecent(raw)
+		s.addRecentAndHistory(raw, "direct")
 		if res.Stdout != "" {
 			fmt.Fprint(out, res.Stdout)
 		}
@@ -254,14 +375,14 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 		if err != nil {
 			return err
 		}
-		s.addRecent(resp.Command)
+		s.addRecentAndHistory(resp.Command, "llm")
 		if shouldExit {
 			return context.Canceled
 		}
 		return nil
 	}
 	res := executor.Run(ctx, rf.cfg.Shell, resp.Command)
-	s.addRecent(resp.Command)
+	s.addRecentAndHistory(resp.Command, "llm")
 	if res.Stdout != "" {
 		fmt.Fprint(out, res.Stdout)
 	}
