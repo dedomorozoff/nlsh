@@ -3,7 +3,7 @@
 ## Project Context
 - Project: `nlsh` (Natural Language Shell).
 - Stack: Go + `llama.cpp` via CGO (no HTTP bridge).
-- Primary target: Linux-first behavior and commands.
+- Primary target: Cross-platform behavior and OS-native commands (Windows, macOS, Linux).
 
 ## Architecture Rules
 - Keep LLM integration behind `internal/llm` interface (`Engine`).

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -184,4 +185,188 @@ func (s *session) addRecent(cmd string) {
 func (s *session) addRecentAndHistory(cmd, source string) {
 	s.addRecent(cmd)
 	s.addHistory(cmd, source)
+}
+
+// askStream отправляет запрос модели и стримит вывод полей на экран в реальном времени.
+func (s *session) askStream(ctx context.Context, mode, userInput string, out io.Writer) (prompt.Response, string, error) {
+	cwd, _ := os.Getwd()
+	pctx := prompt.Context{
+		OS:          osName(),
+		Shell:       s.cfg.Shell,
+		CWD:         cwd,
+		RecentCmds:  s.recent,
+		UserRequest: userInput,
+		Mode:        mode,
+	}
+	system := prompt.BuildSystem(pctx)
+	user := prompt.BuildUser(pctx)
+
+	opts := llm.SamplingOptions{
+		MaxTokens:   s.cfg.MaxTokens,
+		Temperature: s.cfg.Temperature,
+		TopP:        s.cfg.TopP,
+		StopTokens:  []string{"<|im_end|>", "</s>"},
+	}
+
+	tokens := make(chan string, 128)
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- s.engine.Stream(ctx, system, user, opts, tokens)
+	}()
+
+	fmt.Fprintf(out, "%s[nlsh]%s ", cyan, reset)
+
+	var raw strings.Builder
+	printedCounts := make(map[string]int)
+	headersPrinted := make(map[string]bool)
+	keys := []string{"command", "explanation", "question"}
+
+	for tok := range tokens {
+		raw.WriteString(tok)
+		buf := raw.String()
+
+		for _, k := range keys {
+			val, _, _ := getJSONValue(buf, k)
+			if val == "" {
+				continue
+			}
+
+			cleanVal := unescapeJSONString(val)
+			alreadyPrinted := printedCounts[k]
+			if len(cleanVal) > alreadyPrinted {
+				newText := cleanVal[alreadyPrinted:]
+				if !headersPrinted[k] {
+					headersPrinted[k] = true
+					switch k {
+					case "command":
+						fmt.Fprint(out, "\n\033[36mCommand:\033[0m ")
+					case "explanation":
+						fmt.Fprint(out, "\n\033[32mExplanation:\033[0m ")
+					case "question":
+						fmt.Fprint(out, "\n\033[33mQuestion:\033[0m ")
+					}
+				}
+				fmt.Fprint(out, newText)
+				if f, ok := out.(*os.File); ok {
+					_ = f.Sync()
+				}
+				printedCounts[k] = len(cleanVal)
+			}
+		}
+	}
+
+	fmt.Fprintln(out)
+
+	if err := <-errCh; err != nil {
+		return prompt.Response{}, raw.String(), err
+	}
+
+	rawStr := raw.String()
+	resp, perr := prompt.Parse(rawStr)
+	if perr == nil {
+		return resp, rawStr, nil
+	}
+
+	// Ремонт JSON при неудаче
+	repair := user + "\n\nПредыдущий ответ был не валидным JSON. Верни строго один JSON-объект по схеме без любого текста вокруг."
+	raw2, err := s.engine.Generate(ctx, system, repair, opts)
+	if err != nil {
+		return prompt.Response{}, rawStr, err
+	}
+	resp2, perr2 := prompt.Parse(raw2)
+	if perr2 != nil {
+		return prompt.Response{}, rawStr + "\n---\n" + raw2, fmt.Errorf("не удалось распарсить ответ модели: %w", perr2)
+	}
+
+	// Выводим восстановленный ответ, так как он не стримился
+	if resp2.Command != "" {
+		fmt.Fprintf(out, "\n\033[36mCommand:\033[0m %s\n", resp2.Command)
+	}
+	if resp2.Explanation != "" {
+		fmt.Fprintf(out, "\n\033[32mExplanation:\033[0m %s\n", resp2.Explanation)
+	}
+	if resp2.Question != "" {
+		fmt.Fprintf(out, "\n\033[33mQuestion:\033[0m %s\n", resp2.Question)
+	}
+
+	return resp2, raw2, nil
+}
+
+func getJSONValue(buf, key string) (value string, hasClosed bool, startIdx int) {
+	keyIdx := strings.Index(buf, `"`+key+`"`)
+	if keyIdx == -1 {
+		return "", false, -1
+	}
+
+	colonIdx := strings.IndexByte(buf[keyIdx:], ':')
+	if colonIdx == -1 {
+		return "", false, -1
+	}
+	colonIdx += keyIdx
+
+	quoteIdx := strings.IndexByte(buf[colonIdx:], '"')
+	if quoteIdx == -1 {
+		return "", false, -1
+	}
+	quoteIdx += colonIdx
+	startIdx = quoteIdx + 1
+
+	if startIdx >= len(buf) {
+		return "", false, startIdx
+	}
+
+	escaped := false
+	for i := startIdx; i < len(buf); i++ {
+		c := buf[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			return buf[startIdx:i], true, startIdx
+		}
+	}
+	return buf[startIdx:], false, startIdx
+}
+
+func unescapeJSONString(s string) string {
+	var sb strings.Builder
+	sb.Grow(len(s))
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			switch c {
+			case 'n':
+				sb.WriteByte('\n')
+			case 'r':
+				sb.WriteByte('\r')
+			case 't':
+				sb.WriteByte('\t')
+			case '\\':
+				sb.WriteByte('\\')
+			case '"':
+				sb.WriteByte('"')
+			default:
+				sb.WriteByte('\\')
+				sb.WriteByte(c)
+			}
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		sb.WriteByte(c)
+	}
+	if escaped {
+		sb.WriteByte('\\')
+	}
+	return sb.String()
 }

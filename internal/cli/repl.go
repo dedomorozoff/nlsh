@@ -352,9 +352,6 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 		return err
 	}
 
-	dec := evaluatePolicy(resp)
-	renderResponse(out, resp, dec)
-
 	if resp.Intent != prompt.IntentRunCommand {
 		return nil
 	}
@@ -362,53 +359,7 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 		fmt.Fprintln(out, "(dry-run: команда не запущена)")
 		return nil
 	}
-	if !dec.Allowed {
-		fmt.Fprintln(out, "(команда заблокирована политикой безопасности)")
-		return nil
-	}
-	if dec.Risk != prompt.RiskLow || resp.NeedsConfirmation {
-		if !confirm(in, out, "выполнить?") {
-			fmt.Fprintln(out, "(отменено)")
-			return nil
-		}
-	}
-	if handled, shouldExit, err := runBuiltin(resp.Command, out, errW, s.recent); handled {
-		if err != nil {
-			return err
-		}
-		s.addRecentAndHistory(resp.Command, "llm")
-		if shouldExit {
-			return context.Canceled
-		}
-		return nil
-	}
-	res := executor.Run(ctx, rf.cfg.Shell, resp.Command)
-	s.addRecentAndHistory(resp.Command, "llm")
-	
-	// Анализируем результат
-	fb := feedback.Analyze(resp.Command, res.Stdout, res.Stderr, res.ExitCode)
-	
-	if res.Stdout != "" {
-		fmt.Fprint(out, res.Stdout)
-	}
-	if res.Stderr != "" && !fb.Success {
-		// Показываем stderr только при ошибке, но без лишних деталей
-		// PowerShell часто пишет в stderr даже при успехе
-	}
-	
-	// Показываем рекомендацию
-	if hint := fb.Format(); hint != "" {
-		if fb.Success {
-			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", green, reset, green, hint, reset)
-		} else {
-			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", yellow, reset, yellow, hint, reset)
-		}
-	}
-	
-	if res.Err != nil && !fb.Success {
-		return fmt.Errorf("exit %d: %w", res.ExitCode, res.Err)
-	}
-	return nil
+	return runCommandWithCorrection(ctx, s, rf, resp, in, out, errW)
 }
 
 // spin — простой спиннер, работающий в горутине, пока не будет остановлен.
@@ -452,9 +403,7 @@ func (s *spin) stop() {
 // пользователю, передаёт ответ обратно модели и повторяет, пока вопросов больше нет.
 func askWithFollowUp(ctx context.Context, s *session, mode, input string, in io.Reader, out, errW io.Writer) (prompt.Response, error) {
 	for {
-		sp := startSpin(errW)
-		resp, raw, err := s.ask(ctx, mode, input)
-		sp.stop()
+		resp, raw, err := s.askStream(ctx, mode, input, out)
 		if err != nil {
 			if raw != "" {
 				fmt.Fprintln(errW, "raw output:")
@@ -478,4 +427,97 @@ func askWithFollowUp(ctx context.Context, s *session, mode, input string, in io.
 
 		input = input + "\n" + answer
 	}
+}
+
+// runCommandWithCorrection выполняет команду, и в случае ошибки запрашивает автоисправление у LLM.
+func runCommandWithCorrection(ctx context.Context, s *session, rf *rootFlags, resp prompt.Response, in io.Reader, out, errW io.Writer) error {
+	dec := evaluatePolicy(resp)
+	if !dec.Allowed {
+		fmt.Fprintln(out, "(команда заблокирована политикой безопасности)")
+		return nil
+	}
+
+	if dec.Risk != prompt.RiskLow || resp.NeedsConfirmation {
+		if !confirm(in, out, "выполнить?") {
+			fmt.Fprintln(out, "(отменено)")
+			return nil
+		}
+	}
+
+	if handled, shouldExit, err := runBuiltin(resp.Command, out, errW, s.recent); handled {
+		if err != nil {
+			return err
+		}
+		s.addRecentAndHistory(resp.Command, "llm")
+		if shouldExit {
+			return context.Canceled
+		}
+		return nil
+	}
+
+	res := executor.Run(ctx, rf.cfg.Shell, resp.Command)
+	s.addRecentAndHistory(resp.Command, "llm")
+
+	fb := feedback.Analyze(resp.Command, res.Stdout, res.Stderr, res.ExitCode)
+	if res.Stdout != "" {
+		fmt.Fprint(out, res.Stdout)
+	}
+
+	if fb.Success {
+		if hint := fb.Format(); hint != "" {
+			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", green, reset, green, hint, reset)
+		}
+		return nil
+	}
+
+	// Команда завершилась ошибкой. Запрашиваем исправление.
+	stderr := res.Stderr
+	if stderr == "" && res.Err != nil {
+		stderr = res.Err.Error()
+	}
+
+	fmt.Fprintf(out, "\n%s[nlsh]%s Обнаружена ошибка (код %d). Запрашиваю автоисправление у LLM...\n", yellow, reset, res.ExitCode)
+
+	correctionInput := fmt.Sprintf("Команда '%s' завершилась с ошибкой.\nКод выхода: %d\nStderr:\n%s\n\nПожалуйста, исправь команду, чтобы она выполнилась успешно в текущей ОС.", resp.Command, res.ExitCode, stderr)
+
+	corrResp, _, err := s.askStream(ctx, "run", correctionInput, out)
+	if err != nil {
+		return err
+	}
+
+	if corrResp.Intent != prompt.IntentRunCommand {
+		return nil
+	}
+
+	decCorr := evaluatePolicy(corrResp)
+	if !decCorr.Allowed {
+		fmt.Fprintln(out, "(исправленная команда заблокирована политикой безопасности)")
+		return nil
+	}
+
+	if !confirm(in, out, "выполнить исправленную команду?") {
+		fmt.Fprintln(out, "(отменено)")
+		return nil
+	}
+
+	resCorr := executor.Run(ctx, rf.cfg.Shell, corrResp.Command)
+	s.addRecentAndHistory(corrResp.Command, "llm")
+
+	fbCorr := feedback.Analyze(corrResp.Command, resCorr.Stdout, resCorr.Stderr, resCorr.ExitCode)
+	if resCorr.Stdout != "" {
+		fmt.Fprint(out, resCorr.Stdout)
+	}
+
+	if hint := fbCorr.Format(); hint != "" {
+		if fbCorr.Success {
+			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", green, reset, green, hint, reset)
+		} else {
+			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", yellow, reset, yellow, hint, reset)
+		}
+	}
+
+	if resCorr.Err != nil && !fbCorr.Success {
+		return fmt.Errorf("exit %d: %w", resCorr.ExitCode, resCorr.Err)
+	}
+	return nil
 }

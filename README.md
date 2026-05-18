@@ -4,7 +4,7 @@
 A local lightweight LLM (GGUF via `llama.cpp`) is embedded directly into the binary
 via CGO — no HTTP server and no external processes.
 
-> Linux-first. macOS/Windows support is possible but not the primary focus.
+> Cross-platform (Windows, macOS, Linux).
 
 ## Features (MVP)
 
