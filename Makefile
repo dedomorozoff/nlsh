@@ -1,5 +1,3 @@
-SHELL := /bin/bash
-
 LLAMA_DIR := third_party/llama.cpp
 LLAMA_BUILD := $(LLAMA_DIR)/build
 
@@ -39,12 +37,11 @@ submodule:
 MINGW_BIN := /c/ProgramData/mingw64/mingw64/bin
 WINDOWS_DLLS := $(MINGW_BIN)/libstdc++-6.dll $(MINGW_BIN)/libgcc_s_seh-1.dll $(MINGW_BIN)/libgomp-1.dll $(MINGW_BIN)/libwinpthread-1.dll
 
-llama-prepare:
+llama-prepare: submodule
 ifdef OS
-	@powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/CMakeLists.txt')) { git submodule update --init --recursive }"
-	@powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/build')) { New-Item -ItemType Directory -Path 'third_party/llama.cpp/build' }"
-	@powershell -Command "& '$(MINGW_BIN)/cmake.exe' -G 'MinGW Makefiles' -S third_party/llama.cpp -B third_party/llama.cpp/build -DBUILD_SHARED_LIBS=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF -DCMAKE_BUILD_TYPE=Release"
-	@powershell -Command "& '$(MINGW_BIN)/cmake.exe' --build third_party/llama.cpp/build --config Release -j"
+	powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/build')) { New-Item -ItemType Directory -Path 'third_party/llama.cpp/build' }"
+	cmake -G "MinGW Makefiles" -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
+	cmake --build $(LLAMA_BUILD) --config Release -j
 else
 	cmake -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
 	cmake --build $(LLAMA_BUILD) --config Release -j
@@ -55,8 +52,9 @@ llama: llama-prepare
 .PHONY: build
 build:
 ifdef OS
-	@powershell -Command "go build -tags llama -ldflags '$(LDFLAGS)' -o bin/nlsh.exe ./cmd/nlsh"
-	@powershell -Command "if (Test-Path '$(MINGW_BIN)/libstdc++-6.dll') { Copy-Item '$(MINGW_BIN)/libstdc++-6.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgcc_s_seh-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgomp-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libwinpthread-1.dll' bin/ -Force }"
+	powershell -Command "if (-not (Test-Path bin)) { New-Item -ItemType Directory -Path bin }"
+	powershell -Command "go build -tags llama -ldflags '$(LDFLAGS)' -o bin/nlsh.exe ./cmd/nlsh"
+	powershell -Command "if (Test-Path '$(MINGW_BIN)/libstdc++-6.dll') { Copy-Item '$(MINGW_BIN)/libstdc++-6.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgcc_s_seh-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgomp-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libwinpthread-1.dll' bin/ -Force }"
 else
 	$(GO) build $(GOFLAGS) -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh ./cmd/nlsh
 endif
@@ -71,4 +69,9 @@ test:
 
 .PHONY: clean
 clean:
+ifdef OS
+	if exist bin\ rmdir /s /q bin
+	if exist $(LLAMA_BUILD) rmdir /s /q $(LLAMA_BUILD)
+else
 	rm -rf bin/ $(LLAMA_BUILD)
+endif

@@ -223,14 +223,11 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 		return nil
 	}
 
-	resp, raw, err := s.ask(ctx, "run", input)
+	resp, err := askWithFollowUp(ctx, s, "run", input, in, out, errW)
 	if err != nil {
-		if raw != "" {
-			fmt.Fprintln(errW, "raw output:")
-			fmt.Fprintln(errW, raw)
-		}
 		return err
 	}
+
 	dec := evaluatePolicy(resp)
 	renderResponse(out, resp, dec)
 
@@ -273,4 +270,34 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 		return fmt.Errorf("exit %d: %w", res.ExitCode, res.Err)
 	}
 	return nil
+}
+
+// askWithFollowUp вызывает модель и, если в ответе есть question, задаёт его
+// пользователю, передаёт ответ обратно модели и повторяет, пока вопросов больше нет.
+func askWithFollowUp(ctx context.Context, s *session, mode, input string, in io.Reader, out, errW io.Writer) (prompt.Response, error) {
+	for {
+		resp, raw, err := s.ask(ctx, mode, input)
+		if err != nil {
+			if raw != "" {
+				fmt.Fprintln(errW, "raw output:")
+				fmt.Fprintln(errW, raw)
+			}
+			return resp, err
+		}
+		if strings.TrimSpace(resp.Question) == "" {
+			return resp, nil
+		}
+
+		fmt.Fprintf(out, "%s[nlsh]%s %s%s%s\n", cyan, reset, cyan, resp.Question, reset)
+		fmt.Fprintf(out, "%s>%s ", yellow, reset)
+		flushOutput(out)
+
+		sc := bufio.NewScanner(in)
+		if !sc.Scan() {
+			return resp, nil
+		}
+		answer := strings.TrimSpace(sc.Text())
+
+		input = input + "\n" + answer
+	}
 }

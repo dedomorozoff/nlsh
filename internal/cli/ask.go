@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -29,12 +28,8 @@ func newAskCmd(rf *rootFlags) *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			resp, raw, err := s.ask(ctx, "ask", input)
+			resp, err := askWithFollowUp(ctx, s, "ask", input, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			if err != nil {
-				if raw != "" {
-					fmt.Fprintln(cmd.ErrOrStderr(), "raw output:")
-					fmt.Fprintln(cmd.ErrOrStderr(), raw)
-				}
 				return err
 			}
 			renderResponse(cmd.OutOrStdout(), resp, evaluatePolicy(resp))

@@ -23,12 +23,8 @@ func runOneShot(cmd *cobra.Command, rf *rootFlags, input string) error {
 		ctx = context.Background()
 	}
 
-	resp, raw, err := s.ask(ctx, "run", input)
+	resp, err := askWithFollowUp(ctx, s, "run", input, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
-		if raw != "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "raw output:")
-			fmt.Fprintln(cmd.ErrOrStderr(), raw)
-		}
 		return err
 	}
 

@@ -32,15 +32,11 @@ func newRunCmd(rf *rootFlags) *cobra.Command {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			resp, raw, err := s.ask(ctx, "run", input)
-			if err != nil {
-				if raw != "" {
-					fmt.Fprintln(cmd.ErrOrStderr(), "raw output:")
-					fmt.Fprintln(cmd.ErrOrStderr(), raw)
-				}
-				return err
-			}
-			dec := evaluatePolicy(resp)
+	resp, err := askWithFollowUp(ctx, s, "run", input, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	if err != nil {
+		return err
+	}
+	dec := evaluatePolicy(resp)
 			renderResponse(cmd.OutOrStdout(), resp, dec)
 
 			if resp.Intent != prompt.IntentRunCommand {
