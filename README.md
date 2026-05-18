@@ -11,8 +11,28 @@ via CGO — no HTTP server and no external processes.
 - `nlsh ask "..."` — explain what and how to do, without executing anything.
 - `nlsh run "..."` — suggest a shell command and execute it after confirmation.
 - `nlsh repl` — interactive mode with history and bash-like keybindings.
+- `nlsh info` — show system information and auto-detected GPU/CPU settings.
 - Hard JSON contract for model responses.
 - Safety policy gate against dangerous commands (`rm -rf /`, `mkfs`, fork bombs, etc.).
+
+## Auto-Detection
+
+nlsh automatically detects your system capabilities:
+
+| Component | Detection Method |
+|-----------|------------------|
+| CPU Cores | `runtime.NumCPU()` |
+| RAM | OS-specific (WMI on Windows, `/proc/meminfo` on Linux, `sysctl` on macOS) |
+| GPU | `nvidia-smi` (NVIDIA), `lspci` (AMD/Intel), `system_profiler` (macOS) |
+
+GPU layers are automatically set based on detected GPU:
+- NVIDIA: 32 layers
+- AMD: 16 layers  
+- Intel: 8 layers
+- Apple Silicon: 32 layers
+- CPU only: 0 layers
+
+You can override these values via CLI flags or config file.
 
 ## REPL Features
 

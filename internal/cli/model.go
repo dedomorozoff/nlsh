@@ -209,4 +209,6 @@ func addModelCommand(root *cobra.Command, rf *rootFlags) {
 		Short: "Скачать модель (shortcut для model download)",
 		RunE:  modelCmd.Commands()[1].RunE,
 	})
+
+	root.AddCommand(newInfoCmd())
 }
