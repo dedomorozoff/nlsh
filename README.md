@@ -83,10 +83,40 @@ You can override these values via CLI flags or config file.
 
 ## Building
 
+### Quick Start
+
 ```bash
 git submodule update --init --recursive
 make llama       # build static libllama
 make build       # build nlsh binary
+```
+
+### Build for All Platforms (Local Release)
+
+To build binaries for all platforms locally (useful when GitHub Actions billing is exhausted):
+
+```bash
+make build-all   # builds Windows, Linux, macOS (amd64 & arm64)
+```
+
+This creates:
+- `bin/nlsh-windows-amd64.exe`
+- `bin/nlsh-linux-amd64`
+- `bin/nlsh-macos-amd64`
+- `bin/nlsh-macos-arm64`
+
+### GPU Acceleration
+
+```bash
+make llama GPU=cuda    # build with CUDA support
+make llama GPU=metal   # build with Metal support (Apple Silicon)
+make llama GPU=vulkan  # build with Vulkan support
+```
+
+### Build Stub (No LLM)
+
+```bash
+make build-stub      # build without llama.cpp (no LLM support)
 ```
 
 Details on flags/speedups — in `Makefile` (`make help`).
