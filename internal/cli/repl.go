@@ -10,6 +10,8 @@ import (
 	"os/user"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/dedomorozoff/nlsh/internal/executor"
 	"github.com/dedomorozoff/nlsh/internal/prompt"
@@ -272,11 +274,50 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 	return nil
 }
 
+// spin — простой спиннер, работающий в горутине, пока не будет остановлен.
+type spin struct {
+	stopCh chan struct{}
+	wg     sync.WaitGroup
+}
+
+func startSpin(w io.Writer) *spin {
+	s := &spin{stopCh: make(chan struct{})}
+	frames := []string{"\U0001f311", "\U0001f312", "\U0001f313", "\U0001f314", "\U0001f315", "\U0001f316", "\U0001f317", "\U0001f318"}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		i := 0
+		ticker := time.NewTicker(120 * time.Millisecond)
+		defer ticker.Stop()
+		fmt.Fprintf(w, "  \U0001f4ad") // initial
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Fprintf(w, "\r\033[K%s", frames[i%len(frames)])
+				flushOutput(w)
+				i++
+			case <-s.stopCh:
+				fmt.Fprintf(w, "\r\033[K")
+				flushOutput(w)
+				return
+			}
+		}
+	}()
+	return s
+}
+
+func (s *spin) stop() {
+	close(s.stopCh)
+	s.wg.Wait()
+}
+
 // askWithFollowUp вызывает модель и, если в ответе есть question, задаёт его
 // пользователю, передаёт ответ обратно модели и повторяет, пока вопросов больше нет.
 func askWithFollowUp(ctx context.Context, s *session, mode, input string, in io.Reader, out, errW io.Writer) (prompt.Response, error) {
 	for {
+		sp := startSpin(errW)
 		resp, raw, err := s.ask(ctx, mode, input)
+		sp.stop()
 		if err != nil {
 			if raw != "" {
 				fmt.Fprintln(errW, "raw output:")
