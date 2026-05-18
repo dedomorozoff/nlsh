@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dedomorozoff/nlsh/internal/executor"
+	"github.com/dedomorozoff/nlsh/internal/feedback"
 	"github.com/dedomorozoff/nlsh/internal/policy"
 	"github.com/dedomorozoff/nlsh/internal/prompt"
 	"github.com/spf13/cobra"
@@ -58,13 +59,27 @@ func newRunCmd(rf *rootFlags) *cobra.Command {
 			}
 			res := executor.Run(ctx, rf.cfg.Shell, resp.Command)
 			s.addRecent(resp.Command)
+
+			// Анализируем результат
+			fb := feedback.Analyze(resp.Command, res.Stdout, res.Stderr, res.ExitCode)
+
 			if res.Stdout != "" {
 				fmt.Fprint(cmd.OutOrStdout(), res.Stdout)
 			}
-			if res.Stderr != "" {
+			if res.Stderr != "" && !fb.Success {
 				fmt.Fprint(cmd.ErrOrStderr(), res.Stderr)
 			}
-			if res.Err != nil {
+
+			// Показываем рекомендацию
+			if hint := fb.Format(); hint != "" {
+				if fb.Success {
+					fmt.Fprintf(cmd.OutOrStdout(), "\n%s[nlsh]%s %s%s%s\n", green, reset, green, hint, reset)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "\n%s[nlsh]%s %s%s%s\n", yellow, reset, yellow, hint, reset)
+				}
+			}
+
+			if res.Err != nil && !fb.Success {
 				return fmt.Errorf("exit %d: %w", res.ExitCode, res.Err)
 			}
 			return nil

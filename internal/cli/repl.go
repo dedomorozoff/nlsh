@@ -16,6 +16,7 @@ import (
 
 	"github.com/chzyer/readline"
 	"github.com/dedomorozoff/nlsh/internal/executor"
+	"github.com/dedomorozoff/nlsh/internal/feedback"
 	"github.com/dedomorozoff/nlsh/internal/prompt"
 	"github.com/spf13/cobra"
 )
@@ -383,13 +384,28 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 	}
 	res := executor.Run(ctx, rf.cfg.Shell, resp.Command)
 	s.addRecentAndHistory(resp.Command, "llm")
+	
+	// Анализируем результат
+	fb := feedback.Analyze(resp.Command, res.Stdout, res.Stderr, res.ExitCode)
+	
 	if res.Stdout != "" {
 		fmt.Fprint(out, res.Stdout)
 	}
-	if res.Stderr != "" {
-		fmt.Fprint(errW, res.Stderr)
+	if res.Stderr != "" && !fb.Success {
+		// Показываем stderr только при ошибке, но без лишних деталей
+		// PowerShell часто пишет в stderr даже при успехе
 	}
-	if res.Err != nil {
+	
+	// Показываем рекомендацию
+	if hint := fb.Format(); hint != "" {
+		if fb.Success {
+			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", green, reset, green, hint, reset)
+		} else {
+			fmt.Fprintf(out, "\n%s[nlsh]%s %s%s%s\n", yellow, reset, yellow, hint, reset)
+		}
+	}
+	
+	if res.Err != nil && !fb.Success {
 		return fmt.Errorf("exit %d: %w", res.ExitCode, res.Err)
 	}
 	return nil

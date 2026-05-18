@@ -11,6 +11,7 @@ import (
 
 func init() {
 	if runtime.GOOS == "windows" {
+		// Устанавливаем кодировку UTF-8 для консоли Windows
 		os.Setenv("CHCP", "65001")
 	}
 }
@@ -30,6 +31,10 @@ func Run(ctx context.Context, shell, command string) Result {
 	}
 	if runtime.GOOS == "windows" {
 		command = translateToWindows(command)
+		// Добавляем установку UTF-8 кодировки для PowerShell
+		if strings.Contains(strings.ToLower(shell), "powershell") || shell == "" {
+			command = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " + command
+		}
 	}
 	args := shellArgs(shell)
 	cmd := exec.CommandContext(ctx, args[0], append(args[1:], command)...)

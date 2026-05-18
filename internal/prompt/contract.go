@@ -74,11 +74,23 @@ func Parse(raw string) (Response, error) {
 
 	var lastErr error
 	for _, jsonText := range objects {
+		// Удаляем markdown-обёртки ```json ... ```
+		cleaned := strings.TrimSpace(jsonText)
+		if strings.HasPrefix(cleaned, "```json") {
+			cleaned = strings.TrimPrefix(cleaned, "```json")
+			cleaned = strings.TrimSuffix(cleaned, "```")
+			cleaned = strings.TrimSpace(cleaned)
+		} else if strings.HasPrefix(cleaned, "```") {
+			cleaned = strings.TrimPrefix(cleaned, "```")
+			cleaned = strings.TrimSuffix(cleaned, "```")
+			cleaned = strings.TrimSpace(cleaned)
+		}
+
 		var resp Response
-		dec := json.NewDecoder(strings.NewReader(jsonText))
+		dec := json.NewDecoder(strings.NewReader(cleaned))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&resp); err != nil {
-			if err2 := json.Unmarshal([]byte(jsonText), &resp); err2 != nil {
+			if err2 := json.Unmarshal([]byte(cleaned), &resp); err2 != nil {
 				lastErr = fmt.Errorf("decode json: %w", err)
 				continue
 			}
@@ -93,6 +105,7 @@ func Parse(raw string) (Response, error) {
 }
 
 // extractAllJSONObjects извлекает все сбалансированные JSON-объекты из строки.
+// Обрабатывает некорректно экранированные кавычки внутри строк (частая проблема LLM).
 func extractAllJSONObjects(s string) []string {
 	var results []string
 	for {
@@ -104,6 +117,7 @@ func extractAllJSONObjects(s string) []string {
 		depth := 0
 		inString := false
 		escaped := false
+		end := -1
 		for i := 0; i < len(s); i++ {
 			c := s[i]
 			if inString {
@@ -128,13 +142,79 @@ func extractAllJSONObjects(s string) []string {
 			case '}':
 				depth--
 				if depth == 0 {
-					results = append(results, s[:i+1])
-					s = s[i+1:]
+					end = i + 1
 					break
 				}
 			}
 		}
-		break
+		if end == -1 {
+			break
+		}
+		jsonObj := s[:end]
+		// Исправляем некорректно экранированные кавычки внутри строк
+		jsonObj = fixUnescapedQuotes(jsonObj)
+		results = append(results, jsonObj)
+		s = s[end:]
+		// Пропускаем разделители между JSON-объектами
+		s = strings.TrimLeft(s, " \t\r\n-")
 	}
 	return results
+}
+
+// fixUnescapedQuotes исправляет некорректно экранированные кавычки внутри JSON-строк.
+// Модели часто генерируют: "command": "echo "hello"" вместо "command": "echo \"hello\""
+func fixUnescapedQuotes(jsonStr string) string {
+	var result strings.Builder
+	result.Grow(len(jsonStr) + 64)
+
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(jsonStr); i++ {
+		c := jsonStr[i]
+
+		if inString {
+			if escaped {
+				escaped = false
+				result.WriteByte(c)
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				result.WriteByte(c)
+				continue
+			}
+			if c == '"' {
+				// Проверяем, является ли это концом строки или вложенной кавычкой
+				// Если после кавычки идёт :, }, ], ,, то это конец строки
+				rest := strings.TrimLeft(jsonStr[i+1:], " \t\r\n")
+				if len(rest) > 0 {
+					nextChar := rest[0]
+					if nextChar == ':' || nextChar == '}' || nextChar == ']' || nextChar == ',' {
+						// Это закрывающая кавычка поля
+						inString = false
+						result.WriteByte(c)
+						continue
+					}
+				} else {
+					// Конец строки - закрывающая кавычка
+					inString = false
+					result.WriteByte(c)
+					continue
+				}
+				// Это вложенная кавычка - экранируем её
+				result.WriteString("\\\"")
+				continue
+			}
+			result.WriteByte(c)
+			continue
+		}
+
+		if c == '"' {
+			inString = true
+		}
+		result.WriteByte(c)
+	}
+
+	return result.String()
 }
