@@ -41,10 +41,10 @@ llama-prepare: submodule
 ifdef OS
 	powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/build')) { New-Item -ItemType Directory -Path 'third_party/llama.cpp/build' }"
 	cmake -G "MinGW Makefiles" -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
-	cmake --build $(LLAMA_BUILD) --config Release -j
+	cmake --build $(LLAMA_BUILD) --config Release --parallel 2
 else
 	cmake -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
-	cmake --build $(LLAMA_BUILD) --config Release -j
+	cmake --build $(LLAMA_BUILD) --config Release --parallel 2
 endif
 
 llama: llama-prepare

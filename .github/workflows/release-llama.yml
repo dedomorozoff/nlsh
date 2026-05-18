@@ -64,7 +64,7 @@ jobs:
       - name: Build llama.cpp
         run: |
           cmake -G "Unix Makefiles" -S third_party/llama.cpp -B third_party/llama.cpp/build -DBUILD_SHARED_LIBS=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build third_party/llama.cpp/build --config Release --parallel
+          cmake --build third_party/llama.cpp/build --config Release --parallel 2
 
       - name: Build nlsh
         run: |
