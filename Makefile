@@ -24,25 +24,29 @@ LLAMA_JOBS ?= 2
 .PHONY: help
 help:
 	@echo "Targets:"
-	@echo "  make submodule   — обновить submodule llama.cpp"
-	@echo "  make llama       — собрать статическую libllama (CPU)"
-	@echo "  make llama GPU=cuda|metal|vulkan — c GPU-ускорителем"
-	@echo "  make build       — собрать nlsh с CGO (-tags llama)"
-	@echo "  make build-stub  — собрать nlsh без llama.cpp (заглушка)"
-	@echo "  make test        — go test без CGO"
-	@echo "  make clean       — удалить build/ и бинари"
-	@echo "  make all         — собрать все платформы (Windows, Linux, macOS)"
+	@echo "  make submodule   - initialize/update llama.cpp submodule"
+	@echo "  make llama       - build static libllama (CPU)"
+	@echo "  make llama GPU=cuda|metal|vulkan - build with GPU acceleration"
+	@echo "  make build       - build nlsh with CGO (-tags llama)"
+	@echo "  make build-stub  - build nlsh without llama.cpp (stub)"
+	@echo "  make test        - run go test without CGO"
+	@echo "  make clean       - remove build/ and binaries"
+	@echo "  make build-all   - build for all platforms (Windows, Linux, macOS)"
 
 .PHONY: submodule
 submodule:
 	git submodule update --init --recursive
+
+# Detect Cygwin/MSYS vs native Windows cmd
+UNAME_S := $(shell uname 2>/dev/null)
+IS_WIN_SHELL := $(if $(findstring NT,$(UNAME_S)),,$(if $(OS),1,))
 
 # Windows-specific DLLs from MinGW
 MINGW_BIN := /c/ProgramData/mingw64/mingw64/bin
 WINDOWS_DLLS := $(MINGW_BIN)/libstdc++-6.dll $(MINGW_BIN)/libgcc_s_seh-1.dll $(MINGW_BIN)/libgomp-1.dll $(MINGW_BIN)/libwinpthread-1.dll
 
 llama-prepare: submodule
-ifdef OS
+ifeq ($(IS_WIN_SHELL),1)
 	powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/build')) { New-Item -ItemType Directory -Path 'third_party/llama.cpp/build' }"
 	cmake -G "MinGW Makefiles" -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
 	cmake --build $(LLAMA_BUILD) --config Release --parallel $(LLAMA_JOBS)
@@ -55,7 +59,7 @@ llama: llama-prepare
 
 .PHONY: build
 build:
-ifdef OS
+ifeq ($(IS_WIN_SHELL),1)
 	powershell -Command "if (-not (Test-Path bin)) { New-Item -ItemType Directory -Path bin }"
 	powershell -Command "go build -tags llama -ldflags '$(LDFLAGS)' -o bin/nlsh.exe ./cmd/nlsh"
 	powershell -Command "if (Test-Path '$(MINGW_BIN)/libstdc++-6.dll') { Copy-Item '$(MINGW_BIN)/libstdc++-6.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgcc_s_seh-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgomp-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libwinpthread-1.dll' bin/ -Force }"
@@ -92,7 +96,7 @@ test:
 
 .PHONY: clean
 clean:
-ifdef OS
+ifeq ($(IS_WIN_SHELL),1)
 	if exist bin\ rmdir /s /q bin
 	if exist $(LLAMA_BUILD) rmdir /s /q $(LLAMA_BUILD)
 else

@@ -35,16 +35,16 @@ func runOneShot(cmd *cobra.Command, rf *rootFlags, input string) error {
 		return nil
 	}
 	if rf.cfg.DryRun {
-		fmt.Fprintln(cmd.OutOrStdout(), "(dry-run: команда не запущена)")
+		fmt.Fprintln(cmd.OutOrStdout(), "(dry-run: command not executed)")
 		return nil
 	}
 	if !dec.Allowed {
-		fmt.Fprintln(cmd.OutOrStdout(), "(команда заблокирована политикой безопасности)")
+		fmt.Fprintln(cmd.OutOrStdout(), "(command blocked by security policy)")
 		return nil
 	}
 	if dec.Risk != prompt.RiskLow || resp.NeedsConfirmation {
-		if !confirm(cmd.InOrStdin(), cmd.OutOrStdout(), "выполнить?") {
-			fmt.Fprintln(cmd.OutOrStdout(), "(отменено)")
+		if !confirm(cmd.InOrStdin(), cmd.OutOrStdout(), "execute?") {
+			fmt.Fprintln(cmd.OutOrStdout(), "(cancelled)")
 			return nil
 		}
 	}

@@ -46,7 +46,7 @@ func newSession(cfg config.Config) (*session, error) {
 		GPULayers: cfg.GPULayers,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("загрузка модели: %w", err)
+		return nil, fmt.Errorf("load model: %w", err)
 	}
 	return &session{cfg: cfg, engine: eng}, nil
 }
@@ -80,7 +80,7 @@ func resolveModelPath(cfg config.Config) (string, error) {
 		return d.ModelPath(all[0].Name), nil
 	}
 
-	return "", errors.New("модель не найдена, выполни: nlsh model download")
+	return "", errors.New("model not found, run: nlsh model download")
 }
 
 func (s *session) close() {
@@ -137,7 +137,7 @@ func (s *session) ask(ctx context.Context, mode, userInput string) (prompt.Respo
 		CWD:         cwd,
 		RecentCmds:  s.recent,
 		UserRequest: userInput,
-		Mode:        mode,
+		Mode:        string(s.cfg.Mode),
 	}
 	system := prompt.BuildSystem(pctx)
 	user := prompt.BuildUser(pctx)
@@ -158,14 +158,14 @@ func (s *session) ask(ctx context.Context, mode, userInput string) (prompt.Respo
 		return resp, raw, nil
 	}
 
-	repair := user + "\n\nПредыдущий ответ был не валидным JSON. Верни строго один JSON-объект по схеме без любого текста вокруг."
+	repair := user + "\n\nPrevious response was not valid JSON. Return strictly a single JSON object matching the schema, with no text around it."
 	raw2, err := s.engine.Generate(ctx, system, repair, opts)
 	if err != nil {
 		return prompt.Response{}, raw, err
 	}
 	resp2, perr2 := prompt.Parse(raw2)
 	if perr2 != nil {
-		return prompt.Response{}, raw + "\n---\n" + raw2, fmt.Errorf("не удалось распарсить ответ модели: %w", perr2)
+		return prompt.Response{}, raw + "\n---\n" + raw2, fmt.Errorf("failed to parse model response: %w", perr2)
 	}
 	return resp2, raw2, nil
 }
@@ -196,7 +196,7 @@ func (s *session) askStream(ctx context.Context, mode, userInput string, out io.
 		CWD:         cwd,
 		RecentCmds:  s.recent,
 		UserRequest: userInput,
-		Mode:        mode,
+		Mode:        string(s.cfg.Mode),
 	}
 	system := prompt.BuildSystem(pctx)
 	user := prompt.BuildUser(pctx)
@@ -269,14 +269,14 @@ func (s *session) askStream(ctx context.Context, mode, userInput string, out io.
 	}
 
 	// Ремонт JSON при неудаче
-	repair := user + "\n\nПредыдущий ответ был не валидным JSON. Верни строго один JSON-объект по схеме без любого текста вокруг."
+	repair := user + "\n\nPrevious response was not valid JSON. Return strictly a single JSON object matching the schema, with no text around it."
 	raw2, err := s.engine.Generate(ctx, system, repair, opts)
 	if err != nil {
 		return prompt.Response{}, rawStr, err
 	}
 	resp2, perr2 := prompt.Parse(raw2)
 	if perr2 != nil {
-		return prompt.Response{}, rawStr + "\n---\n" + raw2, fmt.Errorf("не удалось распарсить ответ модели: %w", perr2)
+		return prompt.Response{}, rawStr + "\n---\n" + raw2, fmt.Errorf("failed to parse model response: %w", perr2)
 	}
 
 	// Выводим восстановленный ответ, так как он не стримился

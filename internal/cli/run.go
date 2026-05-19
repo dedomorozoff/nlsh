@@ -13,13 +13,13 @@ import (
 
 func newRunCmd(rf *rootFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "run <запрос>",
-		Short: "Предложить и выполнить команду по запросу",
+		Use:   "run <request>",
+		Short: "Suggest and execute a command from a natural language request",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := strings.Join(args, " ")
 			if strings.TrimSpace(input) == "" {
-				return errors.New("пустой запрос")
+				return errors.New("empty request")
 			}
 			s, err := newSession(rf.cfg)
 			if err != nil {
@@ -39,7 +39,7 @@ func newRunCmd(rf *rootFlags) *cobra.Command {
 				return nil
 			}
 			if rf.cfg.DryRun {
-				fmt.Fprintln(cmd.OutOrStdout(), "(dry-run: команда не запущена)")
+				fmt.Fprintln(cmd.OutOrStdout(), "(dry-run: command not executed)")
 				return nil
 			}
 			return runCommandWithCorrection(ctx, s, rf, resp, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())

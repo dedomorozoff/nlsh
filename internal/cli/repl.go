@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/chzyer/readline"
+	"github.com/dedomorozoff/nlsh/internal/config"
 	"github.com/dedomorozoff/nlsh/internal/executor"
 	"github.com/dedomorozoff/nlsh/internal/feedback"
 	"github.com/dedomorozoff/nlsh/internal/prompt"
@@ -43,7 +44,7 @@ func flushOutput(w io.Writer) {
 func newReplCmd(rf *rootFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "repl",
-		Short: "Интерактивный режим",
+		Short: "Interactive mode",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := newSession(rf.cfg)
 			if err != nil {
@@ -54,8 +55,8 @@ func newReplCmd(rf *rootFlags) *cobra.Command {
 			out := cmd.OutOrStdout()
 			in := cmd.InOrStdin()
 
-			banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell (%srepl%s mode)\n%sНапиши запрос или /help для справки%s\n\n",
-				bold, cyan, reset, green, reset, gray, reset)
+		banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell (%srepl%s mode)\n%sType a request or /help for help. Alt+1/2/3 or /mode 1/2/3 to switch modes.%s\n\n",
+			bold, cyan, reset, green, reset, gray, reset)
 			fmt.Fprint(out, banner)
 
 			ctx := cmd.Context()
@@ -83,7 +84,7 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 
 	for {
 		cwd, _ := os.Getwd()
-		promptStr := buildPrompt(usr.Username, hostname, cwd, isTTY)
+		promptStr := buildPrompt(usr.Username, hostname, cwd, string(s.cfg.Mode), isTTY)
 
 		fmt.Fprint(out, promptStr)
 		fmt.Fprint(out, " ")  // space after prompt
@@ -105,7 +106,7 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 		}
 
 		if strings.HasPrefix(line, "/") {
-			if stop := handleSlash(line, out); stop {
+			if stop := handleSlash(line, out, &s.cfg); stop {
 				return nil
 			}
 			continue
@@ -120,10 +121,14 @@ func replLoop(ctx context.Context, s *session, rf *rootFlags, in io.Reader, out,
 	}
 }
 
-func buildPrompt(username, hostname, cwd string, isTTY bool) string {
-	_ = username // suppress unused warning
+func buildPrompt(username, hostname, cwd, mode string, isTTY bool) string {
+	_ = username
 	short := shortPath(cwd)
-	return fmt.Sprintf("%s[%s]%s> ", gray, short, reset)
+	modeLabel := "ai"
+	if mode != "" {
+		modeLabel = mode
+	}
+	return fmt.Sprintf("%s[%s] %s> %s", gray, short, modeLabel, reset)
 }
 
 func shortPath(p string) string {
@@ -166,8 +171,8 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 	_ = os.MkdirAll(filepath.Dir(historyPath), 0755)
 
 	// Initialize readline with history
-	config := &readline.Config{
-		Prompt:          buildPrompt(usr.Username, hostname, "", false) + " ",
+	rlConfig := &readline.Config{
+		Prompt:          buildPrompt(usr.Username, hostname, "", string(s.cfg.Mode), false) + " ",
 		HistoryFile:     historyPath,
 		HistoryLimit:    1000,
 		InterruptPrompt: "^C",
@@ -175,16 +180,39 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 	}
 
 	// Filter input for special keys
-	config.FuncFilterInputRune = func(r rune) (rune, bool) {
+	ms := NewModeSwitcher(&s.cfg, out)
+	altEsc := false // tracks if last rune was ESC (for Alt+key detection)
+	rlConfig.FuncFilterInputRune = func(r rune) (rune, bool) {
 		// Ctrl+L (0x0c) - clear screen
 		if r == 0x0c {
 			clearScreen(out)
 			return 0, false
 		}
+		// Alt+1/2/3 detection: terminals send ESC + key for Alt combos
+		if altEsc {
+			altEsc = false
+			switch r {
+			case '1':
+				ms.Switch(config.ModeAI)
+				return 0, false
+			case '2':
+				ms.Switch(config.ModeHelp)
+				return 0, false
+			case '3':
+				ms.Switch(config.ModeShell)
+				return 0, false
+			}
+			// ESC followed by something else, pass through
+			return r, true
+		}
+		if r == 0x1b { // ESC
+			altEsc = true
+			return 0, false
+		}
 		return r, true
 	}
 
-	rl, err := readline.NewEx(config)
+	rl, err := readline.NewEx(rlConfig)
 	if err != nil {
 		// Fallback to basic mode if readline fails
 		fmt.Fprintf(errW, "%sreadline initialization failed: %v, using basic mode%s\n", yellow, err, reset)
@@ -194,7 +222,7 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 
 	for {
 		cwd, _ := os.Getwd()
-		rl.SetPrompt(buildPrompt(usr.Username, hostname, cwd, true) + " ")
+		rl.SetPrompt(buildPrompt(usr.Username, hostname, cwd, string(s.cfg.Mode), true) + " ")
 
 		line, err := rl.Readline()
 		if err != nil {
@@ -219,7 +247,7 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 		_ = rl.SaveHistory(line)
 
 		if strings.HasPrefix(line, "/") {
-			if stop := handleSlash(line, out); stop {
+			if stop := handleSlash(line, out, &s.cfg); stop {
 				return nil
 			}
 			continue
@@ -234,10 +262,10 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 	}
 }
 
-func handleSlash(line string, out io.Writer) (stop bool) {
+func handleSlash(line string, out io.Writer, cfg *config.Config) (stop bool) {
 	switch {
 	case line == "/exit", line == "/quit", line == "exit", line == "quit":
-		fmt.Fprintln(out, "до встречи!")
+		fmt.Fprintln(out, "bye!")
 		return true
 	case line == "/help", line == "help":
 		showHelp(out)
@@ -259,61 +287,94 @@ func handleSlash(line string, out io.Writer) (stop bool) {
 		wd, _ := os.Getwd()
 		fmt.Fprintln(out, wd)
 	case line == "/history", line == "history":
-		fmt.Fprintln(out, "история... (используйте Ctrl+R для поиска)")
+		fmt.Fprintln(out, "history... (use Ctrl+R to search)")
 	case line == "/bind", line == "/bind keys":
 		showKeyBindings(out)
+	case IsModeCommand(line):
+		ms := NewModeSwitcher(cfg, out)
+		if line == "/mode" {
+			ms.ShowCurrent()
+			return false
+		}
+		newMode := ParseModeCommand(line)
+		if newMode != "" {
+			ms.Switch(newMode)
+		}
 	default:
 		if strings.HasPrefix(line, "!") {
 			cmd := strings.TrimSpace(strings.TrimPrefix(line, "!"))
 			fmt.Fprintf(out, "%s$ %s%s\n", cyan, reset, cmd)
 			return false
 		}
-		fmt.Fprintf(out, "%sнеизвестная команда: %s%s\n", red, line, reset)
+		fmt.Fprintf(out, "%sunknown command: %s%s\n", red, line, reset)
 	}
 	return false
 }
 
 func showKeyBindings(out io.Writer) {
-	fmt.Fprintf(out, "%s%s=== Доступные хоткеи ===%s\n\n", bold, cyan, reset)
-	fmt.Fprintf(out, "%sОсновные:%s\n", bold, reset)
-	fmt.Fprintf(out, "  %sCtrl+A%s     — начало строки\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+E%s     — конец строки\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+U%s     — удалить до начала строки\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+K%s     — удалить до конца строки\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+L%s     — очистить экран\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+R%s     — обратный поиск по истории\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+S%s     — прямой поиск по истории\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+P%s     — предыдущая команда\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+N%s     — следующая команда\n", yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+B%s      — назад по слову\n", yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+F%s      — вперед по слову\n", yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+D%s      — удалить слово вперед\n", yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+W%s     — удалить слово назад\n", yellow, reset)
-	fmt.Fprintf(out, "\n%sСпециальные:%s\n", bold, reset)
-	fmt.Fprintf(out, "  %s/exit%s      — выйти из REPL\n", yellow, reset)
-	fmt.Fprintf(out, "  %s/cd%s путь   — сменить директорию\n", yellow, reset)
-	fmt.Fprintf(out, "  %s/clear%s     — очистить экран\n", yellow, reset)
-	fmt.Fprintf(out, "  %s/pwd%s       — показать текущую директорию\n", yellow, reset)
-	fmt.Fprintf(out, "  %s/history%s   — показать историю\n", yellow, reset)
-	fmt.Fprintf(out, "  %s/bind keys%s — показать этот список\n", yellow, reset)
-	fmt.Fprintf(out, "  %s!команда%s   — выполнить команду напрямую\n", yellow, reset)
+	fmt.Fprintf(out, "%s%s=== Available Keybindings ===%s\n\n", bold, cyan, reset)
+	fmt.Fprintf(out, "%sBasic:%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sCtrl+A%s     — beginning of line\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+E%s     — end of line\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+U%s     — delete to beginning of line\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+K%s     — delete to end of line\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+L%s     — clear screen\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+R%s     — reverse history search\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+S%s     — forward history search\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+P%s     — previous command\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+N%s     — next command\n", yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+B%s      — back one word\n", yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+F%s      — forward one word\n", yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+D%s      — delete forward one word\n", yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+W%s     — delete backward one word\n", yellow, reset)
+	fmt.Fprintf(out, "\n%sModes (Alt+1/2/3 or commands):%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sAlt+1%s / %s/mode 1%s      — AI mode (auto-execute)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+2%s / %s/mode 2%s      — Help mode (command + explanation)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+3%s / %s/mode 3%s      — Shell mode (direct execution)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "\n%sSpecial:%s\n", bold, reset)
+	fmt.Fprintf(out, "  %s/exit%s      — exit REPL\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/cd%s path   — change directory\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/clear%s     — clear screen\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/pwd%s       — show current directory\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/history%s   — show history\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/mode%s      — show current mode\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/bind keys%s — show this list\n", yellow, reset)
+	fmt.Fprintf(out, "  %s!command%s   — execute command directly\n", yellow, reset)
 }
 
 func showHelp(out io.Writer) {
-	fmt.Fprintf(out, "%s%s=== nlsh справка ===%s\n\n", bold, cyan, reset)
-	fmt.Fprintf(out, "%sОписание:%s\n  nlsh — оболочка с естественным языком. Пишешь \"покажи файлы\",\n  а он выполняет \"ls -la\".\n\n", bold, reset)
-	fmt.Fprintf(out, "%sКоманды:%s\n  просто текст    — отправить запрос LLM\n  %s!команда%s     — выполнить команду напрямую\n  %s/cd%s путь     — сменить директорию\n  %s/clear%s       — очистить экран\n  %s/pwd%s         — показать текущую директорию\n  %s/history%s     — показать историю\n  %s/exit%s        — выйти\n\n", bold, reset,
-		yellow, reset, yellow, reset, yellow, reset, yellow, reset, yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "%sХоткеи (bash-стиль):%s\n", bold, reset)
-	fmt.Fprintf(out, "  %sCtrl+A%s     — начало строки    %sCtrl+E%s     — конец строки\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+R%s     — поиск истории    %sCtrl+S%s     — поиск вперёд\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+P%s     — предыдущая       %sCtrl+N%s     — следующая\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+U%s     — удалить до начала %sCtrl+K%s     — удалить до конца\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+B%s      — назад по слову    %sAlt+F%s      — вперед по слову\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+W%s     — удалить слово назад %sAlt+D%s    — удалить слово вперед\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sCtrl+L%s     — очистить экран    %s/exit%s      — выйти\n\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "%sПримеры:%s\n  покажи все txt файлы\n  найди ошибки в логах\n  запусти docker\n\n", bold, reset)
-	fmt.Fprintf(out, "%s Режим по умолчанию: %sdry-run%s (команды не выполняются).\n  Используй --dry-run=false чтобы включить.\n\n", bold, green, reset)
+	fmt.Fprintf(out, "%s%s=== nlsh help ===%s\n\n", bold, cyan, reset)
+	fmt.Fprintf(out, "%sDescription:%s\n  nlsh is a natural language shell. Type \"show files\" and it\n  runs \"ls -la\" for you.\n\n", bold, reset)
+	fmt.Fprintf(out, "%sModes:%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sAI%s    — AI generates and executes commands automatically (default)\n", yellow, reset)
+	fmt.Fprintf(out, "  %sHelp%s  — AI shows command + explanation, you run it manually\n", yellow, reset)
+	fmt.Fprintf(out, "  %sShell%s — Direct shell command execution, NL requests via AI\n\n", yellow, reset)
+	fmt.Fprintf(out, "%sCommands:%s\n", bold, reset)
+	fmt.Fprintf(out, "  plain text    — send request to LLM\n")
+	fmt.Fprintf(out, "  %s!command%s   — execute command directly\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/cd%s path   — change directory\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/clear%s     — clear screen\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/pwd%s       — show current directory\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/history%s   — show history\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/mode%s      — show current mode\n", yellow, reset)
+	fmt.Fprintf(out, "  %s/mode ai%s   or %s/mode 1%s — AI mode\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/mode help%s or %s/mode 2%s — Help mode\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/mode shell%s or %s/mode 3%s— Shell mode\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/exit%s      — exit\n\n", yellow, reset)
+	fmt.Fprintf(out, "%sKeybindings (bash-style):%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sCtrl+A%s     — start of line     %sCtrl+E%s     — end of line\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+R%s     — history search    %sCtrl+S%s     — forward search\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+P%s     — previous          %sCtrl+N%s     — next\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+U%s     — delete to start   %sCtrl+K%s     — delete to end\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+B%s      — back one word     %sAlt+F%s      — forward one word\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+W%s     — delete word back  %sAlt+D%s    — delete word forward\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sCtrl+L%s     — clear screen      %s/exit%s      — exit\n\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "%sModes (Alt+1/2/3 or commands):%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sAlt+1%s / %s/mode 1%s      — AI mode (auto-execute)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+2%s / %s/mode 2%s      — Help mode (command + explanation)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %sAlt+3%s / %s/mode 3%s      — Shell mode (direct execution)\n\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "%sExamples:%s\n  show all txt files\n  find errors in logs\n  start docker\n\n", bold, reset)
+	fmt.Fprintf(out, "%s Default: %sdry-run=false%s (commands execute).\n  Use --dry-run to enable safe mode.\n\n", bold, green, reset)
 }
 
 func clearScreen(out io.Writer) {
@@ -321,8 +382,11 @@ func clearScreen(out io.Writer) {
 }
 
 func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in io.Reader, out, errW io.Writer) error {
-	if strings.HasPrefix(strings.TrimSpace(input), "!") {
-		raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), "!"))
+	input = strings.TrimSpace(input)
+
+	// Direct command execution with ! prefix or in shell mode
+	if strings.HasPrefix(input, "!") {
+		raw := strings.TrimSpace(strings.TrimPrefix(input, "!"))
 		if handled, shouldExit, err := runBuiltin(raw, out, errW, s.recent); handled {
 			if err != nil {
 				return err
@@ -347,6 +411,35 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 		return nil
 	}
 
+	// Shell mode: try direct execution first, fallback to LLM if it fails or input looks like natural language
+	if s.cfg.Mode == config.ModeShell {
+		if looksLikeShellCommand(input) {
+			if handled, shouldExit, err := runBuiltin(input, out, errW, s.recent); handled {
+				if err != nil {
+					return err
+				}
+				if shouldExit {
+					return context.Canceled
+				}
+				s.addRecentAndHistory(input, "direct")
+				return nil
+			}
+			res := executor.Run(ctx, rf.cfg.Shell, input)
+			s.addRecentAndHistory(input, "direct")
+			if res.Stdout != "" {
+				fmt.Fprint(out, res.Stdout)
+			}
+			if res.Stderr != "" {
+				fmt.Fprint(errW, res.Stderr)
+			}
+			if res.Err != nil {
+				return fmt.Errorf("exit %d: %w", res.ExitCode, res.Err)
+			}
+			return nil
+		}
+		// Falls through to LLM if input looks like natural language
+	}
+
 	resp, err := askWithFollowUp(ctx, s, "run", input, in, out, errW)
 	if err != nil {
 		return err
@@ -355,11 +448,60 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 	if resp.Intent != prompt.IntentRunCommand {
 		return nil
 	}
+
+	// Help mode: show command + explanation, don't auto-execute
+	if s.cfg.Mode == config.ModeHelp {
+		fmt.Fprintf(out, "\n%s%s=== Ready Command ===%s%s\n", bold, green, reset, reset)
+		fmt.Fprintf(out, "%s$ %s%s%s\n", cyan, reset, resp.Command, reset)
+		if resp.Explanation != "" {
+			fmt.Fprintf(out, "\n%s%sExplanation:%s %s\n", bold, yellow, reset, resp.Explanation)
+		}
+		fmt.Fprintf(out, "\n%sCopy the command or prefix with ! to execute immediately%s\n", gray, reset)
+		return nil
+	}
+
+	// AI mode: auto-execute (with safety checks)
 	if rf.cfg.DryRun {
-		fmt.Fprintln(out, "(dry-run: команда не запущена)")
+		fmt.Fprintln(out, "(dry-run: command not executed)")
 		return nil
 	}
 	return runCommandWithCorrection(ctx, s, rf, resp, in, out, errW)
+}
+
+// looksLikeShellCommand проверяет, похож ли ввод на shell-команду.
+func looksLikeShellCommand(input string) bool {
+	if input == "" {
+		return false
+	}
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return false
+	}
+	cmd := parts[0]
+	// Common shell commands and builtins
+	commonCmds := map[string]bool{
+		"ls": true, "cd": true, "pwd": true, "cat": true, "mkdir": true, "rm": true,
+		"cp": true, "mv": true, "chmod": true, "chown": true, "grep": true, "find": true,
+		"echo": true, "export": true, "source": true, "alias": true, "which": true, "whoami": true,
+		"ps": true, "kill": true, "top": true, "df": true, "du": true, "free": true,
+		"tar": true, "zip": true, "unzip": true, "curl": true, "wget": true, "ssh": true,
+		"git": true, "docker": true, "npm": true, "pip": true, "python": true, "node": true,
+		"go": true, "make": true, "cmake": true, "gcc": true, "g++": true,
+		"ipconfig": true, "dir": true, "type": true, "del": true, "copy": true, "move": true,
+		"tasklist": true, "taskkill": true, "net": true, "ping": true, "nslookup": true,
+	}
+	if commonCmds[cmd] {
+		return true
+	}
+	// Check if it starts with ./ or / (likely a path)
+	if strings.HasPrefix(cmd, "./") || strings.HasPrefix(cmd, "/") || strings.HasPrefix(cmd, "~") {
+		return true
+	}
+	// Windows: check if it has drive letter
+	if len(cmd) >= 2 && cmd[1] == ':' && (cmd[0] >= 'A' && cmd[0] <= 'Z' || cmd[0] >= 'a' && cmd[0] <= 'z') {
+		return true
+	}
+	return false
 }
 
 // spin — простой спиннер, работающий в горутине, пока не будет остановлен.
@@ -433,13 +575,13 @@ func askWithFollowUp(ctx context.Context, s *session, mode, input string, in io.
 func runCommandWithCorrection(ctx context.Context, s *session, rf *rootFlags, resp prompt.Response, in io.Reader, out, errW io.Writer) error {
 	dec := evaluatePolicy(resp)
 	if !dec.Allowed {
-		fmt.Fprintln(out, "(команда заблокирована политикой безопасности)")
+		fmt.Fprintln(out, "(command blocked by security policy)")
 		return nil
 	}
 
 	if dec.Risk != prompt.RiskLow || resp.NeedsConfirmation {
-		if !confirm(in, out, "выполнить?") {
-			fmt.Fprintln(out, "(отменено)")
+		if !confirm(in, out, "execute?") {
+			fmt.Fprintln(out, "(cancelled)")
 			return nil
 		}
 	}
@@ -476,9 +618,9 @@ func runCommandWithCorrection(ctx context.Context, s *session, rf *rootFlags, re
 		stderr = res.Err.Error()
 	}
 
-	fmt.Fprintf(out, "\n%s[nlsh]%s Обнаружена ошибка (код %d). Запрашиваю автоисправление у LLM...\n", yellow, reset, res.ExitCode)
+	fmt.Fprintf(out, "\n%s[nlsh]%s Error detected (code %d). Requesting auto-correction from LLM...\n", yellow, reset, res.ExitCode)
 
-	correctionInput := fmt.Sprintf("Команда '%s' завершилась с ошибкой.\nКод выхода: %d\nStderr:\n%s\n\nПожалуйста, исправь команду, чтобы она выполнилась успешно в текущей ОС.", resp.Command, res.ExitCode, stderr)
+	correctionInput := fmt.Sprintf("Command '%s' failed.\nExit code: %d\nStderr:\n%s\n\nPlease fix the command so it runs successfully on the current OS.", resp.Command, res.ExitCode, stderr)
 
 	corrResp, _, err := s.askStream(ctx, "run", correctionInput, out)
 	if err != nil {
@@ -491,12 +633,12 @@ func runCommandWithCorrection(ctx context.Context, s *session, rf *rootFlags, re
 
 	decCorr := evaluatePolicy(corrResp)
 	if !decCorr.Allowed {
-		fmt.Fprintln(out, "(исправленная команда заблокирована политикой безопасности)")
+		fmt.Fprintln(out, "(corrected command blocked by security policy)")
 		return nil
 	}
 
-	if !confirm(in, out, "выполнить исправленную команду?") {
-		fmt.Fprintln(out, "(отменено)")
+	if !confirm(in, out, "execute corrected command?") {
+		fmt.Fprintln(out, "(cancelled)")
 		return nil
 	}
 

@@ -7,13 +7,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version — заполняется через -ldflags при сборке.
+// Version is set via -ldflags at build time.
 var Version = "dev"
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Показать версию",
+		Short: "Show version",
 		Run: func(cmd *cobra.Command, _ []string) {
 			fmt.Fprintln(cmd.OutOrStdout(), Version)
 		},
@@ -23,7 +23,7 @@ func newVersionCmd() *cobra.Command {
 func newInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "info",
-		Short: "Показать информацию о системе и конфигурации",
+		Short: "Show system and configuration info",
 		Run: func(cmd *cobra.Command, _ []string) {
 			hw := config.DetectHardware()
 			cfg, _ := config.Load()

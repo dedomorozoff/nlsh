@@ -37,6 +37,34 @@ Rules:
 5. Keep "command" to a single line.
 `
 
+const modeAI = `Mode: AI (Auto-Execute)
+You are an autonomous assistant. The user describes a task in natural language.
+You should:
+1. Generate the appropriate shell command (intent=run_command)
+2. Keep explanations minimal or omit them
+3. The system will automatically execute your command
+4. Only ask clarifying questions (intent=ask_clarification) if the request is ambiguous
+`
+
+const modeHelp = `Mode: Help (Explain)
+You are a teaching assistant. The user wants to learn how to do something.
+You should:
+1. Generate the appropriate shell command (intent=run_command)
+2. ALWAYS provide a clear, detailed explanation of what the command does and why
+3. The user will manually copy and execute the command
+4. Break down complex commands into understandable parts
+5. Include safety warnings for potentially destructive operations
+`
+
+const modeShell = `Mode: Shell (Transparent)
+You are a thin natural-language-to-shell wrapper.
+You should:
+1. If the user types something that looks like a natural language request, convert it to a simple shell command (intent=run_command)
+2. Keep commands simple and direct — no explanations needed
+3. If the user already typed a valid shell command, you may echo it back as-is
+4. Prefer standard, well-known commands over clever one-liners
+`
+
 const windowsSpecifics = `Target OS: Windows. Shell: PowerShell.
 Use PowerShell native commands where possible:
 - Files/Dirs: New-Item, Remove-Item, Get-ChildItem, Get-Content, Copy-Item, Move-Item.
@@ -53,7 +81,17 @@ Use standard POSIX utilities where possible:
 func BuildSystem(ctx Context) string {
 	var b strings.Builder
 	b.WriteString(systemPromptBase)
-	
+
+	// Add mode-specific instructions
+	switch ctx.Mode {
+	case "ai":
+		b.WriteString("\n" + modeAI)
+	case "help":
+		b.WriteString("\n" + modeHelp)
+	case "shell":
+		b.WriteString("\n" + modeShell)
+	}
+
 	targetOS := coalesce(ctx.OS, runtime.GOOS)
 	if targetOS == "windows" {
 		b.WriteString("\n" + windowsSpecifics)
@@ -74,7 +112,7 @@ func BuildSystem(ctx Context) string {
 		}
 	}
 	if ctx.Mode != "" {
-		fmt.Fprintf(&b, "\nMode hint: %s\n", ctx.Mode)
+		fmt.Fprintf(&b, "\nCurrent mode: %s\n", ctx.Mode)
 	}
 	return b.String()
 }

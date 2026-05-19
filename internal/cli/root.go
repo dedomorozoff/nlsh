@@ -7,20 +7,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// rootFlags хранит общие флаги, разделяемые подкомандами.
+// rootFlags holds common flags shared across subcommands.
 type rootFlags struct {
 	cfg config.Config
 }
 
-// NewRootCmd собирает корневую cobra-команду.
+// NewRootCmd assembles the root cobra command.
 func NewRootCmd() *cobra.Command {
 	cfg, _ := config.Load()
 	rf := &rootFlags{cfg: cfg}
 
 	cmd := &cobra.Command{
 		Use:           "nlsh [query]",
-		Short:         "Natural Language Shell — общайся с системой по-человечески",
-		Long:          "nlsh — это локальный LLM-ассистент для shell. Локальная модель через llama.cpp, без облака и без HTTP-сервера.",
+		Short:         "Natural Language Shell — talk to your system naturally",
+		Long:          "nlsh is a local LLM-powered shell assistant. Uses llama.cpp for on-device inference — no cloud, no HTTP server.",
 		Args:          cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -37,15 +37,15 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	pf := cmd.PersistentFlags()
-	pf.StringVar(&rf.cfg.ModelPath, "model", rf.cfg.ModelPath, "путь к GGUF-модели")
-	pf.IntVar(&rf.cfg.Threads, "threads", rf.cfg.Threads, "число потоков для инференса")
-	pf.IntVar(&rf.cfg.CtxSize, "ctx-size", rf.cfg.CtxSize, "размер контекста токенов")
-	pf.IntVar(&rf.cfg.GPULayers, "gpu-layers", rf.cfg.GPULayers, "количество слоёв на GPU (0 = только CPU)")
-	pf.IntVar(&rf.cfg.MaxTokens, "max-tokens", rf.cfg.MaxTokens, "максимум токенов в ответе модели")
-	pf.Float32Var(&rf.cfg.Temperature, "temperature", rf.cfg.Temperature, "температура сэмплирования")
-	pf.Float32Var(&rf.cfg.TopP, "top-p", rf.cfg.TopP, "top-p сэмплирование")
-	pf.StringVar(&rf.cfg.Shell, "shell", rf.cfg.Shell, "shell для исполнения команд")
-	pf.BoolVar(&rf.cfg.DryRun, "dry-run", rf.cfg.DryRun, "не выполнять команды, только показывать")
+	pf.StringVar(&rf.cfg.ModelPath, "model", rf.cfg.ModelPath, "path to GGUF model file")
+	pf.IntVar(&rf.cfg.Threads, "threads", rf.cfg.Threads, "number of inference threads")
+	pf.IntVar(&rf.cfg.CtxSize, "ctx-size", rf.cfg.CtxSize, "context size in tokens")
+	pf.IntVar(&rf.cfg.GPULayers, "gpu-layers", rf.cfg.GPULayers, "number of layers offloaded to GPU (0 = CPU only)")
+	pf.IntVar(&rf.cfg.MaxTokens, "max-tokens", rf.cfg.MaxTokens, "max tokens in model response")
+	pf.Float32Var(&rf.cfg.Temperature, "temperature", rf.cfg.Temperature, "sampling temperature")
+	pf.Float32Var(&rf.cfg.TopP, "top-p", rf.cfg.TopP, "top-p sampling threshold")
+	pf.StringVar(&rf.cfg.Shell, "shell", rf.cfg.Shell, "shell for command execution")
+	pf.BoolVar(&rf.cfg.DryRun, "dry-run", rf.cfg.DryRun, "show commands without executing them")
 
 	cmd.AddCommand(newAskCmd(rf))
 	cmd.AddCommand(newRunCmd(rf))

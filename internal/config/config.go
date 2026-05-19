@@ -11,6 +11,15 @@ import (
 	"strings"
 )
 
+// Mode определяет режим работы nlsh.
+type Mode string
+
+const (
+	ModeAI       Mode = "ai"       // Полная автономия, команда выполняется автоматически
+	ModeHelp     Mode = "help"     // Генерация команд + объяснения, пользователь выполняет вручную
+	ModeShell    Mode = "shell"    // Прозрачный проход через оболочку
+)
+
 // Config описывает рантайм-настройки nlsh. Поля сознательно плоские,
 // чтобы их легко было пробрасывать из флагов CLI и из JSON-файла.
 type Config struct {
@@ -25,6 +34,7 @@ type Config struct {
 	Shell       string  `json:"shell"`
 	HistoryFile string  `json:"history_file"`
 	DryRun      bool    `json:"dry_run"`
+	Mode        Mode    `json:"mode"`
 }
 
 // HardwareInfo содержит информацию о возможностях системы.
@@ -73,6 +83,7 @@ func Default() Config {
 		Shell:       defaultShell(),
 		HistoryFile: defaultHistoryFile(),
 		DryRun:      false,
+		Mode:        ModeAI,
 	}
 }
 

@@ -10,13 +10,13 @@ import (
 
 func newAskCmd(rf *rootFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ask <запрос>",
-		Short: "Объяснить, как сделать, ничего не выполняя",
+		Use:   "ask <query>",
+		Short: "Explain how to do something without executing",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := strings.Join(args, " ")
 			if strings.TrimSpace(input) == "" {
-				return errors.New("пустой запрос")
+				return errors.New("empty request")
 			}
 			s, err := newSession(rf.cfg)
 			if err != nil {
