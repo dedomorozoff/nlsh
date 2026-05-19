@@ -61,37 +61,63 @@ build-all: build-windows build-linux build-macos build-freebsd
 
 .PHONY: build-windows
 build-windows:
+ifeq ($(IS_UNIX),1)
+ifneq ($(findstring CYGWIN,$(UNAME_S))$(findstring MSYS,$(UNAME_S)),)
+	mkdir -p bin
+	$(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-windows-amd64.exe ./cmd/nlsh
+	@if [ -d "$(MINGW_BIN)" ]; then \
+		cp -f "$(MINGW_BIN)"/libstdc++-6.dll "$(MINGW_BIN)"/libgcc_s_seh-1.dll "$(MINGW_BIN)"/libgomp-1.dll "$(MINGW_BIN)"/libwinpthread-1.dll bin/ 2>/dev/null || true; \
+	fi
+else
+	@echo "Note: Cross-compiling Windows binary from standard Unix. Building stub."
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o bin/nlsh-windows-amd64.exe ./cmd/nlsh
+endif
+else
 	powershell -Command "if (-not (Test-Path bin)) { New-Item -ItemType Directory -Path bin }"
 	powershell -Command "go build -tags llama -ldflags '$(LDFLAGS)' -o bin/nlsh-windows-amd64.exe ./cmd/nlsh"
 	powershell -Command "if (Test-Path '$(MINGW_BIN)/libstdc++-6.dll') { Copy-Item '$(MINGW_BIN)/libstdc++-6.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgcc_s_seh-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgomp-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libwinpthread-1.dll' bin/ -Force }"
+endif
 
 .PHONY: build-linux
 build-linux:
-ifeq ($(IS_UNIX),1)
+ifeq ($(shell uname -s 2>/dev/null),Linux)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-linux-amd64 ./cmd/nlsh
 else
-	@echo "Note: CGO cross-compilation to Linux from Windows requires a cross-compiler. Building stub instead."
-	powershell -Command "$$env:GOOS='linux'; $$env:GOARCH='amd64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-linux-amd64 ./cmd/nlsh"
+	@echo "Note: CGO cross-compilation to Linux is only supported when building on Linux. Building stub instead."
+ifeq ($(IS_UNIX),1)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o bin/nlsh-linux-amd64 ./cmd/nlsh
+else
+	powershell -Command '$$env:GOOS="linux"; $$env:GOARCH="amd64"; $$env:CGO_ENABLED="0"; go build -ldflags "$(LDFLAGS)" -o bin/nlsh-linux-amd64 ./cmd/nlsh'
+endif
 endif
 
 .PHONY: build-macos
 build-macos:
-ifeq ($(IS_UNIX),1)
+ifeq ($(shell uname -s 2>/dev/null),Darwin)
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-amd64 ./cmd/nlsh
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-arm64 ./cmd/nlsh
 else
-	@echo "Note: CGO cross-compilation to macOS from Windows requires a cross-compiler. Building stubs instead."
-	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='amd64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-amd64 ./cmd/nlsh"
-	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='arm64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-arm64 ./cmd/nlsh"
+	@echo "Note: CGO cross-compilation to macOS is only supported when building on macOS. Building stubs instead."
+ifeq ($(IS_UNIX),1)
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-amd64 ./cmd/nlsh
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-arm64 ./cmd/nlsh
+else
+	powershell -Command '$$env:GOOS="darwin"; $$env:GOARCH="amd64"; $$env:CGO_ENABLED="0"; go build -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-amd64 ./cmd/nlsh'
+	powershell -Command '$$env:GOOS="darwin"; $$env:GOARCH="arm64"; $$env:CGO_ENABLED="0"; go build -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-arm64 ./cmd/nlsh'
+endif
 endif
 
 .PHONY: build-freebsd
 build-freebsd:
-ifeq ($(IS_UNIX),1)
+ifeq ($(shell uname -s 2>/dev/null),FreeBSD)
 	GOOS=freebsd GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-freebsd-amd64 ./cmd/nlsh
 else
-	@echo "Note: CGO cross-compilation to FreeBSD from Windows requires a cross-compiler. Building stub instead."
-	powershell -Command "$$env:GOOS='freebsd'; $$env:GOARCH='amd64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-freebsd-amd64 ./cmd/nlsh"
+	@echo "Note: CGO cross-compilation to FreeBSD is only supported when building on FreeBSD. Building stub instead."
+ifeq ($(IS_UNIX),1)
+	GOOS=freebsd GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o bin/nlsh-freebsd-amd64 ./cmd/nlsh
+else
+	powershell -Command '$$env:GOOS="freebsd"; $$env:GOARCH="amd64"; $$env:CGO_ENABLED="0"; go build -ldflags "$(LDFLAGS)" -o bin/nlsh-freebsd-amd64 ./cmd/nlsh'
+endif
 endif
 
 .PHONY: test
