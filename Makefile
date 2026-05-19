@@ -1,3 +1,8 @@
+# Detect environment: Windows with non-Unix make (choco, mingw) vs Unix/Cygwin make
+UNAME_S := $(shell uname -s 2>/dev/null)
+IS_CYGWIN := $(if $(findstring CYGWIN_NT,$(UNAME_S)),1,)
+IS_UNIX := $(if $(or $(findstring Linux,$(UNAME_S)),$(findstring Darwin,$(UNAME_S))),1,$(IS_CYGWIN))
+
 LLAMA_DIR := third_party/llama.cpp
 LLAMA_BUILD := $(LLAMA_DIR)/build
 
@@ -21,25 +26,9 @@ endif
 # Ограничение параллелизма для сборки llama.cpp (чтобы не было out of memory)
 LLAMA_JOBS ?= 2
 
-.PHONY: help
-help:
-	@echo "Targets:"
-	@echo "  make submodule   - initialize/update llama.cpp submodule"
-	@echo "  make llama       - build static libllama (CPU)"
-	@echo "  make llama GPU=cuda|metal|vulkan - build with GPU acceleration"
-	@echo "  make build       - build nlsh with CGO (-tags llama)"
-	@echo "  make build-stub  - build nlsh without llama.cpp (stub)"
-	@echo "  make test        - run go test without CGO"
-	@echo "  make clean       - remove build/ and binaries"
-	@echo "  make build-all   - build for all platforms (Windows, Linux, macOS)"
-
-.PHONY: submodule
-submodule:
-	git submodule update --init --recursive
-
-# Detect Cygwin/MSYS vs native Windows cmd
-UNAME_S := $(shell uname 2>/dev/null)
-IS_WIN_SHELL := $(if $(findstring NT,$(UNAME_S)),,$(if $(OS),1,))
+# Platform detection
+UNAME_S := $(shell uname -s 2>/dev/null)
+IS_WINDOWS := $(if $(filter-out CYGWIN_NT MSYS_NT,$(UNAME_S)),,1)
 
 # Windows-specific DLLs from MinGW
 MINGW_BIN := /c/ProgramData/mingw64/mingw64/bin
@@ -83,12 +72,23 @@ build-windows:
 
 .PHONY: build-linux
 build-linux:
+ifeq ($(IS_WIN_SHELL),1)
+	@echo "Note: CGO cross-compilation to Linux from Windows requires a cross-compiler. Building stub instead."
+	powershell -Command "$$env:GOOS='linux'; $$env:GOARCH='amd64'; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-linux-amd64 ./cmd/nlsh"
+else
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-linux-amd64 ./cmd/nlsh
+endif
 
 .PHONY: build-macos
 build-macos:
+ifeq ($(IS_WIN_SHELL),1)
+	@echo "Note: CGO cross-compilation to macOS from Windows requires a cross-compiler. Building stubs instead."
+	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='amd64'; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-amd64 ./cmd/nlsh"
+	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='arm64'; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-arm64 ./cmd/nlsh"
+else
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-amd64 ./cmd/nlsh
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-arm64 ./cmd/nlsh
+endif
 
 .PHONY: test
 test:
