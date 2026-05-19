@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/dedomorozoff/nlsh/internal/executor"
@@ -25,6 +26,10 @@ func runOneShot(cmd *cobra.Command, rf *rootFlags, input string) error {
 
 	resp, err := askWithFollowUp(ctx, s, "run", input, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
+		if errors.Is(err, errCancelQuestion) {
+			fmt.Fprintln(cmd.OutOrStdout(), "(cancelled)")
+			return nil
+		}
 		return err
 	}
 

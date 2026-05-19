@@ -31,6 +31,8 @@ var (
 	gray   = "\033[90m"
 )
 
+var errCancelQuestion = errors.New("cancelled")
+
 var slashCommands = []string{
 	"/exit", "/quit", "/help", "/cd", "/clear", "/pwd", "/history", "/bind", "/mode", "/1", "/2", "/3",
 }
@@ -512,6 +514,10 @@ func handleTurn(ctx context.Context, s *session, rf *rootFlags, input string, in
 
 	resp, err := askWithFollowUp(ctx, s, "run", input, in, out, errW)
 	if err != nil {
+		if errors.Is(err, errCancelQuestion) {
+			fmt.Fprintln(out, "(cancelled)")
+			return nil
+		}
 		return err
 	}
 
@@ -628,14 +634,14 @@ func askWithFollowUp(ctx context.Context, s *session, mode, input string, in io.
 		}
 
 		fmt.Fprintf(out, "%s[nlsh]%s %s%s%s\n", cyan, reset, cyan, resp.Question, reset)
-		fmt.Fprintf(out, "%s>%s ", yellow, reset)
-		flushOutput(out)
+		answer, readErr := readQuestionInput(in, out, fmt.Sprintf("%s>%s ", yellow, reset))
+		if readErr != nil { if errors.Is(readErr, io.EOF) { return resp, nil }; return prompt.Response{}, readErr }
 
-		sc := bufio.NewScanner(in)
-		if !sc.Scan() {
-			return resp, nil
+		lower := strings.ToLower(answer)
+		if lower == "/exit" || lower == "/cancel" || lower == "exit" || lower == "quit" {
+			return prompt.Response{}, errCancelQuestion
 		}
-		answer := strings.TrimSpace(sc.Text())
+		_ = lower
 
 		input = input + "\n" + answer
 	}

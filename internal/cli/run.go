@@ -33,6 +33,10 @@ func newRunCmd(rf *rootFlags) *cobra.Command {
 			}
 	resp, err := askWithFollowUp(ctx, s, "run", input, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
+		if errors.Is(err, errCancelQuestion) {
+			fmt.Fprintln(cmd.OutOrStdout(), "(cancelled)")
+			return nil
+		}
 		return err
 	}
 				if resp.Intent != prompt.IntentRunCommand {
