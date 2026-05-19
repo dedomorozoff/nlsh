@@ -1,7 +1,6 @@
-# Detect environment: Windows with non-Unix make (choco, mingw) vs Unix/Cygwin make
+# Detect environment: Unix (Linux/macOS/Cygwin) vs Windows native (choco make)
 UNAME_S := $(shell uname -s 2>/dev/null)
-IS_CYGWIN := $(if $(findstring CYGWIN_NT,$(UNAME_S)),1,)
-IS_UNIX := $(if $(or $(findstring Linux,$(UNAME_S)),$(findstring Darwin,$(UNAME_S))),1,$(IS_CYGWIN))
+IS_UNIX := $(if $(or $(findstring Linux,$(UNAME_S)),$(findstring Darwin,$(UNAME_S)),$(findstring CYGWIN,$(UNAME_S)),$(findstring MSYS,$(UNAME_S))),1,)
 
 LLAMA_DIR := third_party/llama.cpp
 LLAMA_BUILD := $(LLAMA_DIR)/build
@@ -26,21 +25,17 @@ endif
 # Ограничение параллелизма для сборки llama.cpp (чтобы не было out of memory)
 LLAMA_JOBS ?= 2
 
-# Platform detection
-UNAME_S := $(shell uname -s 2>/dev/null)
-IS_WINDOWS := $(if $(filter-out CYGWIN_NT MSYS_NT,$(UNAME_S)),,1)
-
 # Windows-specific DLLs from MinGW
 MINGW_BIN := /c/ProgramData/mingw64/mingw64/bin
 WINDOWS_DLLS := $(MINGW_BIN)/libstdc++-6.dll $(MINGW_BIN)/libgcc_s_seh-1.dll $(MINGW_BIN)/libgomp-1.dll $(MINGW_BIN)/libwinpthread-1.dll
 
 llama-prepare: submodule
-ifeq ($(IS_WIN_SHELL),1)
-	powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/build')) { New-Item -ItemType Directory -Path 'third_party/llama.cpp/build' }"
-	cmake -G "MinGW Makefiles" -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
+ifeq ($(IS_UNIX),1)
+	cmake -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
 	cmake --build $(LLAMA_BUILD) --config Release --parallel $(LLAMA_JOBS)
 else
-	cmake -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
+	powershell -Command "if (-not (Test-Path 'third_party/llama.cpp/build')) { New-Item -ItemType Directory -Path 'third_party/llama.cpp/build' }"
+	cmake -G "MinGW Makefiles" -S $(LLAMA_DIR) -B $(LLAMA_BUILD) $(CMAKE_FLAGS)
 	cmake --build $(LLAMA_BUILD) --config Release --parallel $(LLAMA_JOBS)
 endif
 
@@ -48,12 +43,12 @@ llama: llama-prepare
 
 .PHONY: build
 build:
-ifeq ($(IS_WIN_SHELL),1)
+ifeq ($(IS_UNIX),1)
+	$(GO) build $(GOFLAGS) -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh ./cmd/nlsh
+else
 	powershell -Command "if (-not (Test-Path bin)) { New-Item -ItemType Directory -Path bin }"
 	powershell -Command "go build -tags llama -ldflags '$(LDFLAGS)' -o bin/nlsh.exe ./cmd/nlsh"
 	powershell -Command "if (Test-Path '$(MINGW_BIN)/libstdc++-6.dll') { Copy-Item '$(MINGW_BIN)/libstdc++-6.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgcc_s_seh-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libgomp-1.dll' bin/ -Force; Copy-Item '$(MINGW_BIN)/libwinpthread-1.dll' bin/ -Force }"
-else
-	$(GO) build $(GOFLAGS) -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh ./cmd/nlsh
 endif
 
 .PHONY: build-stub
@@ -72,22 +67,22 @@ build-windows:
 
 .PHONY: build-linux
 build-linux:
-ifeq ($(IS_WIN_SHELL),1)
-	@echo "Note: CGO cross-compilation to Linux from Windows requires a cross-compiler. Building stub instead."
-	powershell -Command "$$env:GOOS='linux'; $$env:GOARCH='amd64'; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-linux-amd64 ./cmd/nlsh"
-else
+ifeq ($(IS_UNIX),1)
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-linux-amd64 ./cmd/nlsh
+else
+	@echo "Note: CGO cross-compilation to Linux from Windows requires a cross-compiler. Building stub instead."
+	powershell -Command "$$env:GOOS='linux'; $$env:GOARCH='amd64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-linux-amd64 ./cmd/nlsh"
 endif
 
 .PHONY: build-macos
 build-macos:
-ifeq ($(IS_WIN_SHELL),1)
-	@echo "Note: CGO cross-compilation to macOS from Windows requires a cross-compiler. Building stubs instead."
-	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='amd64'; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-amd64 ./cmd/nlsh"
-	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='arm64'; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-arm64 ./cmd/nlsh"
-else
+ifeq ($(IS_UNIX),1)
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-amd64 ./cmd/nlsh
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 CGO_CFLAGS="-I$(LLAMA_BUILD)/include" CGO_LDFLAGS="-L$(LLAMA_BUILD)/lib" $(GO) build -tags llama -ldflags "$(LDFLAGS)" -o bin/nlsh-macos-arm64 ./cmd/nlsh
+else
+	@echo "Note: CGO cross-compilation to macOS from Windows requires a cross-compiler. Building stubs instead."
+	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='amd64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-amd64 ./cmd/nlsh"
+	powershell -Command "$$env:GOOS='darwin'; $$env:GOARCH='arm64'; $$env:CGO_ENABLED=0; go build -ldflags '$(LDFLAGS)' -o bin/nlsh-macos-arm64 ./cmd/nlsh"
 endif
 
 .PHONY: test
@@ -96,9 +91,9 @@ test:
 
 .PHONY: clean
 clean:
-ifeq ($(IS_WIN_SHELL),1)
-	if exist bin\ rmdir /s /q bin
-	if exist $(LLAMA_BUILD) rmdir /s /q $(LLAMA_BUILD)
-else
+ifeq ($(IS_UNIX),1)
 	rm -rf bin/ $(LLAMA_BUILD)
+else
+	powershell -Command "if (Test-Path bin) { Remove-Item -Recurse -Force bin }"
+	powershell -Command "if (Test-Path '$(LLAMA_BUILD)') { Remove-Item -Recurse -Force '$(LLAMA_BUILD)' }"
 endif
