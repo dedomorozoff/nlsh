@@ -32,7 +32,7 @@ func newAskCmd(rf *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			renderResponse(cmd.OutOrStdout(), resp, evaluatePolicy(resp))
+			_ = evaluatePolicy(resp)
 			return nil
 		},
 	}

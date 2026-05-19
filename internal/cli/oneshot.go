@@ -29,7 +29,7 @@ func runOneShot(cmd *cobra.Command, rf *rootFlags, input string) error {
 	}
 
 	dec := evaluatePolicy(resp)
-	renderResponse(cmd.OutOrStdout(), resp, dec)
+	_ = dec
 
 	if resp.Intent != prompt.IntentRunCommand {
 		return nil

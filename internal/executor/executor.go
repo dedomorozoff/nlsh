@@ -3,18 +3,10 @@ package executor
 import (
 	"context"
 	"io"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 )
-
-func init() {
-	if runtime.GOOS == "windows" {
-		// Устанавливаем кодировку UTF-8 для консоли Windows
-		os.Setenv("CHCP", "65001")
-	}
-}
 
 // Result — итог выполнения команды.
 type Result struct {

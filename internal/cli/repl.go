@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -179,13 +178,6 @@ func shortPath(p string) string {
 	home, _ := os.UserHomeDir()
 	if home != "" && strings.HasPrefix(p, home) {
 		return "~" + strings.TrimPrefix(p, home)
-	}
-
-	if runtime.GOOS == "windows" {
-		if len(p) > 3 {
-			return p
-		}
-		return p
 	}
 
 	if len(p) > 40 {
