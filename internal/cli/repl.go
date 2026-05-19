@@ -32,6 +32,44 @@ var (
 	gray   = "\033[90m"
 )
 
+var slashCommands = []string{
+	"/exit", "/quit", "/help", "/cd", "/clear", "/pwd", "/history", "/bind", "/mode", "/1", "/2", "/3",
+}
+
+type slashCompleter struct{}
+
+func (c *slashCompleter) Do(line []rune, pos int) (newLine [][]rune, length int) {
+	if pos == 0 || line[0] != '/' {
+		return nil, 0
+	}
+
+	prefix := string(line[:pos])
+
+	if prefix == "/mode " {
+		suggestions := [][]rune{
+			[]rune("ai"), []rune("help"), []rune("shell"),
+			[]rune("1"), []rune("2"), []rune("3"),
+		}
+		return suggestions, 0
+	}
+
+	if prefix == "/cd " {
+		return nil, 0
+	}
+
+	var matches [][]rune
+	for _, cmd := range slashCommands {
+		if strings.HasPrefix(cmd, prefix) {
+			matches = append(matches, []rune(cmd[len(prefix):]))
+		}
+	}
+
+	if len(matches) > 0 {
+		return matches, len([]rune(prefix))
+	}
+	return nil, 0
+}
+
 func flushOutput(w io.Writer) {
 	if f, ok := w.(*os.File); ok {
 		os.Stderr.Sync()
@@ -55,7 +93,7 @@ func newReplCmd(rf *rootFlags) *cobra.Command {
 			out := cmd.OutOrStdout()
 			in := cmd.InOrStdin()
 
-		banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell (%srepl%s mode)\n%sType a request or /help for help. Alt+1/2/3 or /mode 1/2/3 to switch modes.%s\n\n",
+		banner := fmt.Sprintf("%s%s.nlsh%s — Natural Language Shell (%srepl%s mode)\n%sType a request or /help for help. Use /1, /2, /3 to switch modes.%s\n\n",
 			bold, cyan, reset, green, reset, gray, reset)
 			fmt.Fprint(out, banner)
 
@@ -128,7 +166,13 @@ func buildPrompt(username, hostname, cwd, mode string, isTTY bool) string {
 	if mode != "" {
 		modeLabel = mode
 	}
-	return fmt.Sprintf("%s[%s] %s> %s", gray, short, modeLabel, reset)
+	modeColor := green
+	if modeLabel == "help" {
+		modeColor = yellow
+	} else if modeLabel == "shell" {
+		modeColor = cyan
+	}
+	return fmt.Sprintf("%s[%s] %s%s%s> %s", gray, short, modeColor, modeLabel, reset, reset)
 }
 
 func shortPath(p string) string {
@@ -177,6 +221,7 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 		HistoryLimit:    1000,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
+		AutoComplete:    &slashCompleter{},
 	}
 
 	// Filter input for special keys
@@ -327,10 +372,10 @@ func showKeyBindings(out io.Writer) {
 	fmt.Fprintf(out, "  %sAlt+F%s      — forward one word\n", yellow, reset)
 	fmt.Fprintf(out, "  %sAlt+D%s      — delete forward one word\n", yellow, reset)
 	fmt.Fprintf(out, "  %sCtrl+W%s     — delete backward one word\n", yellow, reset)
-	fmt.Fprintf(out, "\n%sModes (Alt+1/2/3 or commands):%s\n", bold, reset)
-	fmt.Fprintf(out, "  %sAlt+1%s / %s/mode 1%s      — AI mode (auto-execute)\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+2%s / %s/mode 2%s      — Help mode (command + explanation)\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+3%s / %s/mode 3%s      — Shell mode (direct execution)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "\n%sModes (commands):%s\n", bold, reset)
+	fmt.Fprintf(out, "  %s/1%s or %s/mode 1%s      — AI mode (auto-execute)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/2%s or %s/mode 2%s      — Help mode (command + explanation)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/3%s or %s/mode 3%s      — Shell mode (direct execution)\n", yellow, reset, yellow, reset)
 	fmt.Fprintf(out, "\n%sSpecial:%s\n", bold, reset)
 	fmt.Fprintf(out, "  %s/exit%s      — exit REPL\n", yellow, reset)
 	fmt.Fprintf(out, "  %s/cd%s path   — change directory\n", yellow, reset)
@@ -340,6 +385,8 @@ func showKeyBindings(out io.Writer) {
 	fmt.Fprintf(out, "  %s/mode%s      — show current mode\n", yellow, reset)
 	fmt.Fprintf(out, "  %s/bind keys%s — show this list\n", yellow, reset)
 	fmt.Fprintf(out, "  %s!command%s   — execute command directly\n", yellow, reset)
+	fmt.Fprintf(out, "\n%sCompletion:%s\n", bold, reset)
+	fmt.Fprintf(out, "  %sTab%s        — auto-complete slash commands\n", yellow, reset)
 }
 
 func showHelp(out io.Writer) {
@@ -357,9 +404,9 @@ func showHelp(out io.Writer) {
 	fmt.Fprintf(out, "  %s/pwd%s       — show current directory\n", yellow, reset)
 	fmt.Fprintf(out, "  %s/history%s   — show history\n", yellow, reset)
 	fmt.Fprintf(out, "  %s/mode%s      — show current mode\n", yellow, reset)
-	fmt.Fprintf(out, "  %s/mode ai%s   or %s/mode 1%s — AI mode\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %s/mode help%s or %s/mode 2%s — Help mode\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %s/mode shell%s or %s/mode 3%s— Shell mode\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/mode ai%s   or %s/mode 1%s or %s/1%s — AI mode\n", yellow, reset, yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/mode help%s or %s/mode 2%s or %s/2%s — Help mode\n", yellow, reset, yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/mode shell%s or %s/mode 3%s or %s/3%s — Shell mode\n", yellow, reset, yellow, reset, yellow, reset)
 	fmt.Fprintf(out, "  %s/exit%s      — exit\n\n", yellow, reset)
 	fmt.Fprintf(out, "%sKeybindings (bash-style):%s\n", bold, reset)
 	fmt.Fprintf(out, "  %sCtrl+A%s     — start of line     %sCtrl+E%s     — end of line\n", yellow, reset, yellow, reset)
@@ -369,10 +416,10 @@ func showHelp(out io.Writer) {
 	fmt.Fprintf(out, "  %sAlt+B%s      — back one word     %sAlt+F%s      — forward one word\n", yellow, reset, yellow, reset)
 	fmt.Fprintf(out, "  %sCtrl+W%s     — delete word back  %sAlt+D%s    — delete word forward\n", yellow, reset, yellow, reset)
 	fmt.Fprintf(out, "  %sCtrl+L%s     — clear screen      %s/exit%s      — exit\n\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "%sModes (Alt+1/2/3 or commands):%s\n", bold, reset)
-	fmt.Fprintf(out, "  %sAlt+1%s / %s/mode 1%s      — AI mode (auto-execute)\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+2%s / %s/mode 2%s      — Help mode (command + explanation)\n", yellow, reset, yellow, reset)
-	fmt.Fprintf(out, "  %sAlt+3%s / %s/mode 3%s      — Shell mode (direct execution)\n\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "%sModes (commands):%s\n", bold, reset)
+	fmt.Fprintf(out, "  %s/1%s or %s/mode 1%s      — AI mode (auto-execute)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/2%s or %s/mode 2%s      — Help mode (command + explanation)\n", yellow, reset, yellow, reset)
+	fmt.Fprintf(out, "  %s/3%s or %s/mode 3%s      — Shell mode (direct execution)\n\n", yellow, reset, yellow, reset)
 	fmt.Fprintf(out, "%sExamples:%s\n  show all txt files\n  find errors in logs\n  start docker\n\n", bold, reset)
 	fmt.Fprintf(out, "%s Default: %sdry-run=false%s (commands execute).\n  Use --dry-run to enable safe mode.\n\n", bold, green, reset)
 }

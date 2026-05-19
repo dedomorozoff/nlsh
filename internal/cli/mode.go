@@ -35,11 +35,11 @@ func ParseModeCommand(line string) config.Mode {
 		return ""
 	}
 	switch line {
-	case "/mode ai", "/mode 1":
+	case "/mode ai", "/mode 1", "/1":
 		return config.ModeAI
-	case "/mode help", "/mode 2":
+	case "/mode help", "/mode 2", "/2":
 		return config.ModeHelp
-	case "/mode shell", "/mode 3":
+	case "/mode shell", "/mode 3", "/3":
 		return config.ModeShell
 	}
 	return ""
@@ -48,7 +48,7 @@ func ParseModeCommand(line string) config.Mode {
 // IsModeCommand checks if the command is a mode command.
 func IsModeCommand(line string) bool {
 	switch line {
-	case "/mode", "/mode ai", "/mode help", "/mode shell", "/mode 1", "/mode 2", "/mode 3":
+	case "/mode", "/mode ai", "/mode help", "/mode shell", "/mode 1", "/mode 2", "/mode 3", "/1", "/2", "/3":
 		return true
 	}
 	return false
