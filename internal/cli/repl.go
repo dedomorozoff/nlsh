@@ -199,6 +199,9 @@ func isTerminal(r io.Reader) bool {
 
 // replLoopReadline — REPL с readline-подобными хоткеями
 func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW io.Writer) error {
+	var rl *readline.Instance
+	var err error
+
 	usr, _ := user.Current()
 	hostname, _ := os.Hostname()
 
@@ -215,6 +218,16 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 		EOFPrompt:       "exit",
 		AutoComplete:    &slashCompleter{},
 	}
+
+	rlConfig.Listener = readline.FuncListener(func(line []rune, pos int, key rune) (newLine []rune, newPos int, ok bool) {
+		if key == '/' && len(line) == 1 && pos == 1 && line[0] == '/' {
+			fmt.Fprintf(out, "\n%sCommands:%s %s\n", cyan, reset, strings.Join(slashCommands, " "))
+			if rl != nil {
+				rl.Refresh()
+			}
+		}
+		return nil, 0, false
+	})
 
 	// Filter input for special keys
 	ms := NewModeSwitcher(&s.cfg, out)
@@ -249,7 +262,7 @@ func replLoopReadline(ctx context.Context, s *session, rf *rootFlags, out, errW 
 		return r, true
 	}
 
-	rl, err := readline.NewEx(rlConfig)
+	rl, err = readline.NewEx(rlConfig)
 	if err != nil {
 		// Fallback to basic mode if readline fails
 		fmt.Fprintf(errW, "%sreadline initialization failed: %v, using basic mode%s\n", yellow, err, reset)
