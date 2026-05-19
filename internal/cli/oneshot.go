@@ -56,7 +56,7 @@ func runOneShot(cmd *cobra.Command, rf *rootFlags, input string) error {
 		return nil
 	}
 
-	res := executor.Run(ctx, rf.cfg.Shell, resp.Command)
+	res := executor.RunInteractive(ctx, rf.cfg.Shell, resp.Command)
 	s.addRecent(resp.Command)
 	if res.Stdout != "" {
 		fmt.Fprint(cmd.OutOrStdout(), res.Stdout)
