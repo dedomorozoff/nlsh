@@ -269,5 +269,14 @@ else
 	powershell -Command "if (Get-Command 'iscc' -ErrorAction SilentlyContinue) { iscc installer.iss } else { Write-Host 'iscc (Inno Setup) not found. Skipping GUI installer compilation.' -ForegroundColor Yellow }"
 endif
 
+.PHONY: dist-windows-bundle
+dist-windows-bundle: build-windows
+ifeq ($(IS_UNIX),1)
+	@echo "Bundle installer requires Windows. Use: powershell -Command '.\build-bundle.ps1' && iscc installer-bundle.iss"
+else
+	powershell -Command ".\build-bundle.ps1"
+	powershell -Command "if (Get-Command 'iscc' -ErrorAction SilentlyContinue) { iscc installer-bundle.iss } else { Write-Host 'iscc (Inno Setup) not found. Skipping GUI installer compilation.' -ForegroundColor Yellow }"
+endif
+
 .PHONY: dist-all
 dist-all: dist-deb dist-rpm dist-linux-tar dist-macos dist-freebsd dist-windows
