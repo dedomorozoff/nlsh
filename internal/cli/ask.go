@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -30,9 +31,13 @@ func newAskCmd(rf *rootFlags) *cobra.Command {
 			}
 			resp, err := askWithFollowUp(ctx, s, "ask", input, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			if err != nil {
+				if errors.Is(err, errCancelQuestion) {
+					fmt.Fprintln(cmd.OutOrStdout(), "(cancelled)")
+					return nil
+				}
 				return err
 			}
-			renderResponse(cmd.OutOrStdout(), resp, evaluatePolicy(resp))
+			_ = evaluatePolicy(resp)
 			return nil
 		},
 	}
